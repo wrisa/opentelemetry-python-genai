@@ -21,6 +21,8 @@ from opentelemetry.util.genai.types import (
     MessagePart,
     OutputMessage,
     Text,
+    ToolDefinition
+    FunctionToolDefinition
 )
 
 
@@ -144,6 +146,11 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         llm_invocation = self._telemetry_handler.start_llm(
             invocation=llm_invocation
         )
+        if "invocation_params" in kwargs:
+            tools = kwargs["invocation_params"].get("tools") or kwargs["invocation_params"].get("functions")
+            if tools:
+                tool_definitions = self._prepare_tool_definitions(tools)
+                llm_invocation.tool_definitions = tool_definitions
         self._invocation_manager.add_invocation_state(
             run_id=run_id,
             parent_run_id=parent_run_id,
@@ -191,19 +198,33 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
                             )
                         )
 
-                    # Get message content
-                    parts = [
-                        Text(
-                            content=chat_generation.message.content,
-                            type="text",
+                    if finish_reason == "tool_calls":
+                        tool_calls = []
+                        for tool_call in chat_generation.message.tool_calls:
+                            tool_call_request = ToolCallRequest(
+                                name=tool_call.name,
+                                id=tool_call.id,
+                                arguments=tool_call.args,
+                            )
+                            tool_calls.append(tool_call_request)
+                        output_message = OutputMessage(
+                            role="assistant",
+                            parts=cast(list[MessagePart], tool_calls),
+                            finish_reason=finish_reason,
                         )
-                    ]
-                    role = chat_generation.message.type
-                    output_message = OutputMessage(
-                        role=role,
-                        parts=cast(list[MessagePart], parts),
-                        finish_reason=finish_reason,
-                    )
+                    else:
+                        parts = [
+                            Text(
+                                content=chat_generation.message.content,
+                                type="text",
+                            )
+                        ]
+                        role = chat_generation.message.type
+                        output_message = OutputMessage(
+                            role=role,
+                            parts=cast(list[MessagePart], parts),
+                            finish_reason=finish_reason,
+                        )
                     output_messages.append(output_message)
 
                     # Get token usage if available
@@ -264,3 +285,87 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         )
         if llm_invocation.span and not llm_invocation.span.is_recording():
             self._invocation_manager.delete_invocation_state(run_id=run_id)
+
+    def on_tool_start(
+        self,
+        serialized: Optional[dict[str, Any]],
+        input_str: str,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        tags: Optional[list[str]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        inputs: Optional[dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        name = "unknown_tool"
+        description = None
+        if serialized is not None:
+            name = serialized.get("name")
+            description = serialized.get("description")
+
+        arguments: Any = inputs if inputs is not None else input_str
+        tool_invocation = ToolInvocation(
+            name=name,
+            description=description,
+            arguments=arguments,
+        )
+        tool_invocation = self._handler.start_tool_call(tool_invocation)
+        self._invocation_manager.add(run_id, parent_run_id, tool_invocation)
+
+    def on_tool_end(
+        self,
+        output: Any,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **_kwargs: Any,
+    ) -> None:
+        tool_invocation = self._invocation_manager.get(run_id)
+        if not isinstance(tool_invocation, ToolInvocation):
+            return
+        tool_invocation.tool_call_id = getattr(output, "tool_call_id", None)
+        tool_invocation.tool_result = getattr(output, "content", None)
+        tool_invocation.stop()
+        if not tool_invocation.span.is_recording():
+            self._invocation_manager.delete_invocation_state(run_id=run_id)
+
+    def on_tool_error(
+        self,
+        error: BaseException,
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **_: Any,
+    ) -> None:
+        tool_invocation = self._invocation_manager.get(run_id)
+        if not isinstance(tool_invocation, ToolInvocation):
+            return
+        tool_invocation.fail(error)
+        if not tool_invocation.span.is_recording():
+            self._invocation_manager.delete_invocation_state(run_id=run_id)
+
+    def get_property_value(obj, property_name):
+        if isinstance(obj, dict):
+            return obj.get(property_name, None)
+
+        return getattr(obj, property_name, None)
+
+    def _prepare_tool_definitions(tools) -> list[ToolDefinition] | None:
+        if not tools:
+            return None
+
+        definitions: list[ToolDefinition] = []
+        for tool in tools:
+            tool_type = get_property_value(tool, "type")
+            if tool_type == "function":
+                func = get_property_value(tool, "function")
+                if func:
+                    definitions.append(
+                        FunctionToolDefinition(
+                            name=get_property_value(func, "name") or "",
+                            description=get_property_value(func, "description"),
+                            parameters=get_property_value(func, "parameters"),
+                        )
+                    )
+        return definitions
