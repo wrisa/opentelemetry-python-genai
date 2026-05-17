@@ -35,6 +35,8 @@ comment - not in the PR description.
 
 - `instrumentation/` - GenAI instrumentation packages
 - `util/opentelemetry-util-genai/` - shared GenAI utilities
+- `util/opentelemetry-test-util-genai/` - shared test fixtures and assertion helpers
+  (workspace-internal, not published)
 
 Instrumentation packages live under `src/opentelemetry/instrumentation/{name}/` with their own
 `pyproject.toml` and `tests/`. The util package follows the equivalent layout under
@@ -92,6 +94,10 @@ Apply to packages under `instrumentation/`.
 - Tests must verify exact attribute names **and value types**, checked against the semconv spec.
 - Test against oldest and latest supported library versions via `tests/requirements.{oldest,latest}.txt`
   and `{oldest,latest}` `tox.ini` factors.
+- `tests/conftest.py` must consume the shared fixtures from
+  `opentelemetry.test_util_genai` (`from opentelemetry.test_util_genai.fixtures import *` and
+  `from opentelemetry.test_util_genai.vcr import fixture_vcr, scrub_response_headers`) rather
+  than re-implementing provider/exporter/VCR plumbing.
 
 The parallel PR-review rules live in
 [`.github/instructions/instrumentation.instructions.md`](.github/instructions/instrumentation.instructions.md)
