@@ -12,6 +12,7 @@ members = [
     "opentelemetry-instrumentation-openai-v2",
     "opentelemetry-instrumentation-weaviate",
     "opentelemetry-python-genai",
+    "opentelemetry-test-util-genai",
     "opentelemetry-util-genai",
 ]
 
@@ -1224,6 +1225,7 @@ dependencies = [
     { name = "opentelemetry-instrumentation-weaviate", extra = ["instruments"] },
     { name = "opentelemetry-sdk" },
     { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-test-util-genai" },
     { name = "opentelemetry-test-utils" },
     { name = "opentelemetry-util-genai" },
 ]
@@ -1248,6 +1250,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-weaviate", extras = ["instruments"], editable = "instrumentation/opentelemetry-instrumentation-weaviate" },
     { name = "opentelemetry-sdk" },
     { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-test-util-genai", editable = "util/opentelemetry-test-util-genai" },
     { name = "opentelemetry-test-utils" },
     { name = "opentelemetry-util-genai", editable = "util/opentelemetry-util-genai" },
 ]
@@ -1284,6 +1287,31 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9e/de/911ac9e309052aca1b20b2d5549d3db45d1011e1a610e552c6ccdd1b64f8/opentelemetry_semantic_conventions-0.62b1.tar.gz", hash = "sha256:c5cc6e04a7f8c7cdd30be2ed81499fa4e75bfbd52c9cb70d40af1f9cd3619802", size = 145750, upload-time = "2026-04-24T13:15:52.236Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/a6/83dc2ab6fa397ee66fba04fe2e74bdf7be3b3870005359ceb7689103c058/opentelemetry_semantic_conventions-0.62b1-py3-none-any.whl", hash = "sha256:cf506938103d331fbb78eded0d9788095f7fd59016f2bda813c3324e5a74a93c", size = 231620, upload-time = "2026-04-24T13:15:35.454Z" },
+]
+
+[[package]]
+name = "opentelemetry-test-util-genai"
+version = "0.0.0"
+source = { editable = "util/opentelemetry-test-util-genai" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-util-genai" },
+    { name = "pytest" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-util-genai", editable = "util/opentelemetry-util-genai" },
+    { name = "pytest" },
+    { name = "pyyaml" },
 ]
 
 [[package]]

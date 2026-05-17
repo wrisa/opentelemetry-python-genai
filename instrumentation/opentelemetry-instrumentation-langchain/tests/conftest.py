@@ -3,33 +3,25 @@
 
 """Unit tests configuration module."""
 
-import json
 import os
 
 import boto3
 import pytest
-import yaml
 from langchain_aws import ChatBedrock
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from opentelemetry.instrumentation.langchain import LangChainInstrumentor
-from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import (
-    InMemoryLogRecordExporter,
-    SimpleLogRecordProcessor,
-)
-from opentelemetry.sdk.metrics import (
-    MeterProvider,
-)
-from opentelemetry.sdk.metrics.export import (
-    InMemoryMetricReader,
-)
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
-    InMemorySpanExporter,
-)
+from opentelemetry.test_util_genai.vcr import scrub_response_headers_overwrite
+
+# Loading the ``vcr`` module also activates the ``vcr_cassette_name`` override,
+# which strips the ``[parametrize]`` suffix so all ``content_capture`` matrix
+# cells share one cassette per test (the HTTP request is identical across
+# cells).
+pytest_plugins = [
+    "opentelemetry.test_util_genai.fixtures",
+    "opentelemetry.test_util_genai.vcr",
+]
 
 
 @pytest.fixture(scope="function", name="chat_openai_gpt_3_5_turbo_model")
@@ -73,46 +65,6 @@ def fixture_gemini():
     yield llm
 
 
-@pytest.fixture(scope="function", name="span_exporter")
-def fixture_span_exporter():
-    exporter = InMemorySpanExporter()
-    yield exporter
-
-
-@pytest.fixture(scope="function", name="log_exporter")
-def fixture_log_exporter():
-    exporter = InMemoryLogRecordExporter()
-    yield exporter
-
-
-@pytest.fixture(scope="function", name="metric_reader")
-def fixture_metric_reader():
-    exporter = InMemoryMetricReader()
-    yield exporter
-
-
-@pytest.fixture(scope="function", name="tracer_provider")
-def fixture_tracer_provider(span_exporter):
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
-    return provider
-
-
-@pytest.fixture(scope="function", name="logger_provider")
-def fixture_logger_provider(log_exporter):
-    provider = LoggerProvider()
-    provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
-    return provider
-
-
-@pytest.fixture(scope="function", name="meter_provider")
-def fixture_meter_provider(metric_reader):
-    meter_provider = MeterProvider(
-        metric_readers=[metric_reader],
-    )
-    return meter_provider
-
-
 @pytest.fixture(scope="function")
 def start_instrumentation(
     tracer_provider,
@@ -146,9 +98,13 @@ def vcr_config():
             ("openai-project", "test_openai_project_id"),
         ],
         "decode_compressed_response": True,
-        "before_record_response": scrub_response_headers,
+        "before_record_response": scrub_response_headers_overwrite(
+            {
+                "openai-organization": "test_openai_org_id",
+                "Set-Cookie": "test_set_cookie",
+            }
+        ),
     }
-
 
 class LiteralBlockScalar(str):
     """Formats the string as a literal block scalar, preserving whitespace and
