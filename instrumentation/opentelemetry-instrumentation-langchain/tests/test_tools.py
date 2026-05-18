@@ -11,8 +11,9 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
+from langchain_core.tools import tool
 
 from opentelemetry.instrumentation._semconv import (
     _OpenTelemetrySemanticConventionStability,
@@ -404,8 +405,6 @@ def test_on_chat_model_start_with_tools_sets_definitions(monkeypatch):
         }
     ]
 
-    from langchain_core.messages import HumanMessage
-
     handler.on_chat_model_start(
         serialized=_OPENAI_SERIALIZED,
         messages=[[HumanMessage(content="What is 3 * 4?")]],
@@ -415,9 +414,6 @@ def test_on_chat_model_start_with_tools_sets_definitions(monkeypatch):
     )
 
     # Finish the span so attributes are flushed
-    from langchain_core.messages import AIMessage
-    from langchain_core.outputs import ChatGeneration, LLMResult
-
     ai_msg = AIMessage(content="12")
     ai_msg.response_metadata = {"finish_reason": "stop"}
     generation = ChatGeneration(message=ai_msg, text="12")
@@ -470,8 +466,6 @@ def test_on_llm_end_with_tool_calls_records_tool_call_requests(monkeypatch):
     )
 
     run_id = uuid4()
-    from langchain_core.messages import HumanMessage
-
     handler.on_chat_model_start(
         serialized=_OPENAI_SERIALIZED,
         messages=[[HumanMessage(content="What is 3 * 4?")]],
@@ -510,8 +504,6 @@ def test_on_llm_end_with_multiple_tool_calls(monkeypatch):
     )
 
     run_id = uuid4()
-    from langchain_core.messages import HumanMessage
-
     handler.on_chat_model_start(
         serialized=_OPENAI_SERIALIZED,
         messages=[[HumanMessage(content="Compute 3*4 and 5+6")]],
@@ -568,7 +560,6 @@ def test_tool_span_created_via_instrumentor(monkeypatch):
     )
 
     try:
-        from langchain_core.tools import tool
 
         @tool
         def multiply(a: int, b: int) -> int:
