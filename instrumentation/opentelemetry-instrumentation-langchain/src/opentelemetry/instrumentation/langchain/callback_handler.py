@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Optional, cast
 from uuid import UUID
 
@@ -13,7 +14,13 @@ from langchain_core.outputs import LLMResult
 from opentelemetry.instrumentation.langchain.invocation_manager import (
     _InvocationManager,
 )
+from opentelemetry.instrumentation.langchain.utils import (
+    _prepare_tool_definitions,
+)
 from opentelemetry.util.genai.handler import TelemetryHandler
+from opentelemetry.util.genai.invocation import (
+    ToolInvocation,
+)
 from opentelemetry.util.genai.types import (
     Error,
     InputMessage,
@@ -21,8 +28,7 @@ from opentelemetry.util.genai.types import (
     MessagePart,
     OutputMessage,
     Text,
-    ToolDefinition
-    FunctionToolDefinition
+    ToolCallRequest,
 )
 
 
@@ -143,14 +149,16 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        if "invocation_params" in kwargs:
+            tools = kwargs["invocation_params"].get("tools") or kwargs[
+                "invocation_params"
+            ].get("functions")
+            if tools:
+                tool_definitions = _prepare_tool_definitions(tools)
+                llm_invocation.tool_definitions = tool_definitions
         llm_invocation = self._telemetry_handler.start_llm(
             invocation=llm_invocation
         )
-        if "invocation_params" in kwargs:
-            tools = kwargs["invocation_params"].get("tools") or kwargs["invocation_params"].get("functions")
-            if tools:
-                tool_definitions = self._prepare_tool_definitions(tools)
-                llm_invocation.tool_definitions = tool_definitions
         self._invocation_manager.add_invocation_state(
             run_id=run_id,
             parent_run_id=parent_run_id,
@@ -199,12 +207,12 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
                         )
 
                     if finish_reason == "tool_calls":
-                        tool_calls = []
+                        tool_calls: list[ToolCallRequest] = []
                         for tool_call in chat_generation.message.tool_calls:
                             tool_call_request = ToolCallRequest(
-                                name=tool_call.name,
-                                id=tool_call.id,
-                                arguments=tool_call.args,
+                                name=tool_call["name"],
+                                id=tool_call["id"],
+                                arguments=tool_call["args"],
                             )
                             tool_calls.append(tool_call_request)
                         output_message = OutputMessage(
@@ -298,20 +306,26 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         inputs: Optional[dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
-        name = "unknown_tool"
+        name = "unknown"
         description = None
         if serialized is not None:
-            name = serialized.get("name")
+            name = serialized.get("name") or "unknown"
             description = serialized.get("description")
 
-        arguments: Any = inputs if inputs is not None else input_str
-        tool_invocation = ToolInvocation(
-            name=name,
-            description=description,
-            arguments=arguments,
+        raw_arguments: Any = inputs if inputs is not None else input_str
+        arguments: str | None
+        if isinstance(raw_arguments, dict):
+            arguments = json.dumps(raw_arguments)
+        elif isinstance(raw_arguments, str):
+            arguments = raw_arguments
+        else:
+            arguments = None
+        tool_invocation = self._telemetry_handler.start_tool(
+            name=name, tool_description=description, arguments=arguments
         )
-        tool_invocation = self._handler.start_tool_call(tool_invocation)
-        self._invocation_manager.add(run_id, parent_run_id, tool_invocation)
+        self._invocation_manager.add_invocation_state(
+            run_id, parent_run_id, tool_invocation
+        )
 
     def on_tool_end(
         self,
@@ -321,7 +335,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **_kwargs: Any,
     ) -> None:
-        tool_invocation = self._invocation_manager.get(run_id)
+        tool_invocation = self._invocation_manager.get_invocation(run_id)
         if not isinstance(tool_invocation, ToolInvocation):
             return
         tool_invocation.tool_call_id = getattr(output, "tool_call_id", None)
@@ -338,34 +352,9 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **_: Any,
     ) -> None:
-        tool_invocation = self._invocation_manager.get(run_id)
+        tool_invocation = self._invocation_manager.get_invocation(run_id)
         if not isinstance(tool_invocation, ToolInvocation):
             return
         tool_invocation.fail(error)
         if not tool_invocation.span.is_recording():
             self._invocation_manager.delete_invocation_state(run_id=run_id)
-
-    def get_property_value(obj, property_name):
-        if isinstance(obj, dict):
-            return obj.get(property_name, None)
-
-        return getattr(obj, property_name, None)
-
-    def _prepare_tool_definitions(tools) -> list[ToolDefinition] | None:
-        if not tools:
-            return None
-
-        definitions: list[ToolDefinition] = []
-        for tool in tools:
-            tool_type = get_property_value(tool, "type")
-            if tool_type == "function":
-                func = get_property_value(tool, "function")
-                if func:
-                    definitions.append(
-                        FunctionToolDefinition(
-                            name=get_property_value(func, "name") or "",
-                            description=get_property_value(func, "description"),
-                            parameters=get_property_value(func, "parameters"),
-                        )
-                    )
-        return definitions
