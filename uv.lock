@@ -1122,6 +1122,7 @@ name = "opentelemetry-instrumentation-langchain"
 source = { editable = "instrumentation/opentelemetry-instrumentation-langchain" }
 dependencies = [
     { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-util-genai" },
 ]
 
 [package.optional-dependencies]
@@ -1132,7 +1133,8 @@ instruments = [
 [package.metadata]
 requires-dist = [
     { name = "langchain", marker = "extra == 'instruments'", specifier = ">=0.3.21" },
-    { name = "opentelemetry-instrumentation", specifier = "~=0.57b0" },
+    { name = "opentelemetry-instrumentation", specifier = "~=0.60b0" },
+    { name = "opentelemetry-util-genai", editable = "util/opentelemetry-util-genai" },
 ]
 provides-extras = ["instruments"]
 

@@ -45,10 +45,13 @@ def make_input_message(data: Any) -> list[InputMessage]:
     return input_messages
 
 
-def make_output_message(data: dict[str, Any]) -> list[OutputMessage]:
+def make_output_message(data: Any) -> list[OutputMessage]:
     """Create structured output message with full data as JSON."""
+    if not isinstance(data, dict):
+        return []
+    data_dict = cast(dict[str, Any], data)
     output_messages: list[OutputMessage] = []
-    messages: Any = data.get("messages")
+    messages: list[Any] | None = data_dict.get("messages")
     if messages is None:
         return []
     for msg in messages:
@@ -63,7 +66,7 @@ def make_output_message(data: dict[str, Any]) -> list[OutputMessage]:
     return output_messages
 
 
-def make_last_output_message(data: dict[str, Any]) -> list[OutputMessage]:
+def make_last_output_message(data: Any) -> list[OutputMessage]:
     """Extract only the last AI message as the output.
 
     For Workflow and AgentInvocation spans, the final AI message best represents

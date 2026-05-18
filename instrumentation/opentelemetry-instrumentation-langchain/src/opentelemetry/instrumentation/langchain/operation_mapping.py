@@ -107,7 +107,6 @@ def _has_agent_signals(metadata: Optional[dict[str, Any]]) -> bool:
         metadata.get(_META_AGENT_SPAN)
         or metadata.get(_META_AGENT_NAME)
         or metadata.get(_META_AGENT_TYPE)
-        or metadata.get("langgraph_node")
     )
 
 
