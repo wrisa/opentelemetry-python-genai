@@ -8,12 +8,15 @@ from __future__ import annotations
 import json
 from typing import Any
 from unittest.mock import MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
+from opentelemetry.instrumentation._semconv import (
+    _OpenTelemetrySemanticConventionStability,
+)
 from opentelemetry.instrumentation.langchain import LangChainInstrumentor
 from opentelemetry.instrumentation.langchain.callback_handler import (
     OpenTelemetryLangChainCallbackHandler,
@@ -33,9 +36,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
-)
-from opentelemetry.instrumentation._semconv import (
-    _OpenTelemetrySemanticConventionStability,
 )
 from opentelemetry.semconv._incubating.attributes import gen_ai_attributes
 from opentelemetry.semconv.attributes import error_attributes
@@ -137,7 +137,10 @@ def test_prepare_tool_definitions_multiple_tools():
         },
         {
             "type": "function",
-            "function": {"name": "subtract", "description": "Subtract numbers"},
+            "function": {
+                "name": "subtract",
+                "description": "Subtract numbers",
+            },
         },
     ]
     result = _prepare_tool_definitions(tools)
@@ -242,7 +245,9 @@ _OPENAI_METADATA: dict[str, Any] = {"ls_provider": "openai"}
 
 
 def test_on_tool_start_and_end_creates_span(monkeypatch):
-    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
     tracer_provider, span_exporter, logger_provider, meter_provider = (
         _make_providers()
     )
@@ -270,14 +275,19 @@ def test_on_tool_start_and_end_creates_span(monkeypatch):
     attrs = span.attributes
     assert attrs[gen_ai_attributes.GEN_AI_OPERATION_NAME] == "execute_tool"
     assert attrs[gen_ai_attributes.GEN_AI_TOOL_NAME] == "multiply"
-    assert attrs[gen_ai_attributes.GEN_AI_TOOL_DESCRIPTION] == "Multiply two numbers"
+    assert (
+        attrs[gen_ai_attributes.GEN_AI_TOOL_DESCRIPTION]
+        == "Multiply two numbers"
+    )
     assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == json.dumps(
         {"a": 3, "b": 4}
     )
 
 
 def test_on_tool_start_with_string_input(monkeypatch):
-    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
     tracer_provider, span_exporter, logger_provider, meter_provider = (
         _make_providers()
     )
@@ -300,12 +310,16 @@ def test_on_tool_start_with_string_input(monkeypatch):
     assert len(spans) == 1
     attrs = spans[0].attributes
     assert attrs[gen_ai_attributes.GEN_AI_TOOL_NAME] == "search"
-    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == "Paris weather"
+    assert (
+        attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == "Paris weather"
+    )
 
 
 def test_on_tool_start_with_no_serialized(monkeypatch):
     """on_tool_start with serialized=None falls back to name='unknown'."""
-    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
     tracer_provider, span_exporter, logger_provider, meter_provider = (
         _make_providers()
     )
@@ -331,7 +345,9 @@ def test_on_tool_start_with_no_serialized(monkeypatch):
 
 
 def test_on_tool_error_records_error_type(monkeypatch):
-    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
     tracer_provider, span_exporter, logger_provider, meter_provider = (
         _make_providers()
     )
@@ -362,7 +378,9 @@ def test_on_tool_error_records_error_type(monkeypatch):
 
 def test_on_chat_model_start_with_tools_sets_definitions(monkeypatch):
     """Tool definitions passed via invocation_params are captured on the span."""
-    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
     monkeypatch.setenv(
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
     )
@@ -437,7 +455,9 @@ def _build_tool_call_llm_result(
 
 def test_on_llm_end_with_tool_calls_records_tool_call_requests(monkeypatch):
     """When finish_reason is tool_calls the output message parts are ToolCallRequests."""
-    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
     monkeypatch.setenv(
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
     )
@@ -475,7 +495,9 @@ def test_on_llm_end_with_tool_calls_records_tool_call_requests(monkeypatch):
 
 
 def test_on_llm_end_with_multiple_tool_calls(monkeypatch):
-    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
     monkeypatch.setenv(
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
     )
@@ -521,7 +543,9 @@ def test_on_llm_end_with_multiple_tool_calls(monkeypatch):
 
 def test_tool_span_created_via_instrumentor(monkeypatch):
     """Using LangChainInstrumentor, on_tool_start/end produces an execute_tool span."""
-    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
 
     span_exporter = InMemorySpanExporter()
     tracer_provider = TracerProvider()

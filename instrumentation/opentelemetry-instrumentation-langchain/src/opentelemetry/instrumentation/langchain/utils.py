@@ -35,7 +35,9 @@ def _prepare_tool_definitions(tools: list[Any]) -> list[ToolDefinition] | None:
                 definitions.append(
                     FunctionToolDefinition(
                         name=str(func_name) if func_name is not None else "",
-                        description=str(func_description) if func_description is not None else None,
+                        description=str(func_description)
+                        if func_description is not None
+                        else None,
                         parameters=_get_property_value(func, "parameters"),
                     )
                 )
