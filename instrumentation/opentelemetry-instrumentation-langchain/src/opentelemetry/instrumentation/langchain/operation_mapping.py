@@ -37,9 +37,7 @@ class OperationName:
     """Canonical GenAI semantic convention operation names."""
 
     INVOKE_AGENT: str = GenAI.GenAiOperationNameValues.INVOKE_AGENT.value
-    # invoke_workflow is not yet in the semconv enum; use the expected
-    # string value so the mapping is forward-compatible.
-    INVOKE_WORKFLOW: str = "invoke_workflow"
+    INVOKE_WORKFLOW: str = GenAI.GenAiOperationNameValues.INVOKE_WORKFLOW.value
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +131,12 @@ def _looks_like_workflow(
         )
         return LANGGRAPH_IDENTIFIER in name or LANGGRAPH_IDENTIFIER in graph_id
 
+    # No serialized data to inspect, but this is a top-level chain
+    # (parent_run_id is None). When we have zero information about a root-level
+    # chain we prefer to emit a span rather than silently drop it — more data
+    # is better than missing the outermost invocation entirely. Treat it as a
+    # workflow so the outermost operation always gets a span even when the
+    # chain didn't populate its serialized representation.
     return True
 
 
