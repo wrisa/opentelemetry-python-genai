@@ -33,6 +33,28 @@ from opentelemetry.util.genai.types import InputMessage, OutputMessage, Text
 # ---------------------------------------------------------------------------
 
 
+def _make_agent_inv_mock() -> mock.MagicMock:
+    """Return a spec'd AgentInvocation mock with agent_name pre-configured."""
+    agent_inv = mock.MagicMock(spec=AgentInvocation)
+    agent_inv.span = mock.MagicMock()
+    agent_inv.span.is_recording.return_value = False
+    # agent_name is an instance attribute set in AgentInvocation.__init__ via the
+    # constructor arg; pre-configure it so spec-restricted attribute access works.
+    agent_inv.agent_name = None
+    return agent_inv
+
+
+def _make_invoke_local_agent_side_effect(inv: mock.MagicMock):
+    """Return a side_effect for invoke_local_agent that mirrors what the real
+    AgentInvocation constructor does: set agent_name from the kwarg."""
+
+    def _side_effect(*args, **kwargs):
+        inv.agent_name = kwargs.get("agent_name")
+        return inv
+
+    return _side_effect
+
+
 def _make_handler():
     """Return a handler wired to a MagicMock TelemetryHandler."""
     telemetry = mock.MagicMock()
@@ -43,11 +65,12 @@ def _make_handler():
     workflow_inv.span.is_recording.return_value = False
     telemetry.workflow.return_value = workflow_inv
 
-    # invoke_local_agent returns a mock AgentInvocation
-    agent_inv = mock.MagicMock(spec=AgentInvocation)
-    agent_inv.span = mock.MagicMock()
-    agent_inv.span.is_recording.return_value = False
-    telemetry.invoke_local_agent.return_value = agent_inv
+    # invoke_local_agent returns a mock AgentInvocation whose agent_name is set
+    # to match whatever agent_name kwarg was passed (mirrors real constructor).
+    agent_inv = _make_agent_inv_mock()
+    telemetry.invoke_local_agent.side_effect = (
+        _make_invoke_local_agent_side_effect(agent_inv)
+    )
 
     handler = OpenTelemetryLangChainCallbackHandler(telemetry)
     return handler, telemetry, workflow_inv, agent_inv
@@ -223,10 +246,10 @@ class TestOnChainStartAgent:
         child_run_id = _run_id()
 
         # First agent
-        first_agent_inv = mock.MagicMock(spec=AgentInvocation)
-        first_agent_inv.span = mock.MagicMock()
-        first_agent_inv.span.is_recording.return_value = False
-        telemetry.invoke_local_agent.return_value = first_agent_inv
+        first_agent_inv = _make_agent_inv_mock()
+        telemetry.invoke_local_agent.side_effect = (
+            _make_invoke_local_agent_side_effect(first_agent_inv)
+        )
 
         handler.on_chain_start(
             serialized={"name": "math_agent"},
@@ -237,10 +260,10 @@ class TestOnChainStartAgent:
         )
 
         # Second agent with a different name
-        second_agent_inv = mock.MagicMock(spec=AgentInvocation)
-        second_agent_inv.span = mock.MagicMock()
-        second_agent_inv.span.is_recording.return_value = False
-        telemetry.invoke_local_agent.return_value = second_agent_inv
+        second_agent_inv = _make_agent_inv_mock()
+        telemetry.invoke_local_agent.side_effect = (
+            _make_invoke_local_agent_side_effect(second_agent_inv)
+        )
 
         handler.on_chain_start(
             serialized={"name": "weather_agent"},
@@ -261,10 +284,10 @@ class TestOnChainStartAgent:
         parent_run_id = _run_id()
         child_run_id = _run_id()
 
-        parent_agent_inv = mock.MagicMock(spec=AgentInvocation)
-        parent_agent_inv.span = mock.MagicMock()
-        parent_agent_inv.span.is_recording.return_value = False
-        telemetry.invoke_local_agent.return_value = parent_agent_inv
+        parent_agent_inv = _make_agent_inv_mock()
+        telemetry.invoke_local_agent.side_effect = (
+            _make_invoke_local_agent_side_effect(parent_agent_inv)
+        )
 
         handler.on_chain_start(
             serialized={"name": "Math_Agent"},
