@@ -66,7 +66,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
             workflow_name_override = (
                 metadata.get("workflow_name") if metadata else None
             )
-            workflow = self._telemetry_handler.start_workflow(
+            workflow = self._telemetry_handler.workflow(
                 name=workflow_name_override or workflow_name
             )
             workflow.input_messages = make_input_message(inputs)
@@ -91,12 +91,12 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
                     else None
                 )
                 if suggested_agent_name_lower != agent_invocation_name_lower:
-                    agent = self._telemetry_handler.start_invoke_local_agent(
+                    agent = self._telemetry_handler.invoke_local_agent(
                         provider=metadata.get("ls_provider", "unknown")
                         if metadata
                         else "unknown",
+                        agent_name=suggested_agent_name,
                     )
-                    agent.agent_name = suggested_agent_name
                     agent.input_messages = make_input_message(inputs)
 
                     if metadata:
@@ -274,7 +274,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
                     )
                 )
 
-        llm_invocation = self._telemetry_handler.start_inference(
+        llm_invocation = self._telemetry_handler.inference(
             provider,
             request_model=request_model,
         )

@@ -18,7 +18,9 @@ from opentelemetry.test_util_genai.conformance import (  # noqa: E402
     run_conformance,
 )
 
+from .conformance.agent import AgentScenario
 from .conformance.inference import InferenceScenario
+from .conformance.workflow import WorkflowScenario
 
 pytestmark = pytest.mark.conformance
 
@@ -27,6 +29,8 @@ pytestmark = pytest.mark.conformance
     "scenario",
     [
         InferenceScenario(),
+        AgentScenario(),
+        WorkflowScenario(),
     ],
     ids=lambda s: type(s).__name__,
 )

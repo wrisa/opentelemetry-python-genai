@@ -24,7 +24,6 @@ __all__ = [
     "OperationName",
     "classify_chain_run",
     "resolve_agent_name",
-    "should_ignore_chain",
 ]
 
 # ---------------------------------------------------------------------------
@@ -145,7 +144,7 @@ def _looks_like_workflow(
 # ---------------------------------------------------------------------------
 
 
-def should_ignore_chain(
+def _should_ignore_chain(
     metadata: Optional[dict[str, Any]],
     agent_name: Optional[str],
     kwargs: dict[str, Any],
@@ -206,7 +205,7 @@ def classify_chain_run(
     agent_name = resolve_agent_name(serialized, metadata, kwargs)
 
     # 1. Suppress known noise.
-    if should_ignore_chain(metadata, agent_name, kwargs):
+    if _should_ignore_chain(metadata, agent_name, kwargs):
         return None
 
     # 2. Agent detection.

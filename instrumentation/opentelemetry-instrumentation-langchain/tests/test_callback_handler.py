@@ -37,17 +37,17 @@ def _make_handler():
     """Return a handler wired to a MagicMock TelemetryHandler."""
     telemetry = mock.MagicMock()
 
-    # start_workflow returns a mock WorkflowInvocation
+    # workflow returns a mock WorkflowInvocation
     workflow_inv = mock.MagicMock(spec=WorkflowInvocation)
     workflow_inv.span = mock.MagicMock()
     workflow_inv.span.is_recording.return_value = False
-    telemetry.start_workflow.return_value = workflow_inv
+    telemetry.workflow.return_value = workflow_inv
 
-    # start_invoke_local_agent returns a mock AgentInvocation
+    # invoke_local_agent returns a mock AgentInvocation
     agent_inv = mock.MagicMock(spec=AgentInvocation)
     agent_inv.span = mock.MagicMock()
     agent_inv.span.is_recording.return_value = False
-    telemetry.start_invoke_local_agent.return_value = agent_inv
+    telemetry.invoke_local_agent.return_value = agent_inv
 
     handler = OpenTelemetryLangChainCallbackHandler(telemetry)
     return handler, telemetry, workflow_inv, agent_inv
@@ -75,7 +75,7 @@ class TestOnChainStartWorkflow:
             parent_run_id=None,
         )
 
-        telemetry.start_workflow.assert_called_once()
+        telemetry.workflow.assert_called_once()
         assert (
             handler._invocation_manager.get_invocation(run_id) is workflow_inv
         )
@@ -91,7 +91,7 @@ class TestOnChainStartWorkflow:
             parent_run_id=None,
         )
 
-        telemetry.start_workflow.assert_called_once_with(name="MyLangGraph")
+        telemetry.workflow.assert_called_once_with(name="MyLangGraph")
 
     def test_workflow_name_overridden_by_metadata(self):
         handler, telemetry, _, _ = _make_handler()
@@ -105,9 +105,7 @@ class TestOnChainStartWorkflow:
             metadata={"workflow_name": "custom_workflow"},
         )
 
-        telemetry.start_workflow.assert_called_once_with(
-            name="custom_workflow"
-        )
+        telemetry.workflow.assert_called_once_with(name="custom_workflow")
 
     def test_workflow_registered_in_invocation_manager(self):
         handler, _, workflow_inv, _ = _make_handler()
@@ -143,8 +141,9 @@ class TestOnChainStartAgent:
             metadata={"agent_name": "math_agent", "ls_provider": "openai"},
         )
 
-        telemetry.start_invoke_local_agent.assert_called_once_with(
-            provider="openai"
+        telemetry.invoke_local_agent.assert_called_once_with(
+            provider="openai",
+            agent_name="math_agent",
         )
         assert agent_inv.agent_name == "math_agent"
         assert handler._invocation_manager.get_invocation(run_id) is agent_inv
@@ -203,7 +202,7 @@ class TestOnChainStartAgent:
             parent_run_id=None,
             metadata={"agent_name": "math_agent"},
         )
-        telemetry.start_invoke_local_agent.reset_mock()
+        telemetry.invoke_local_agent.reset_mock()
 
         # A child chain with the same agent name should NOT create a new span
         handler.on_chain_start(
@@ -214,7 +213,7 @@ class TestOnChainStartAgent:
             metadata={"agent_name": "math_agent"},
         )
 
-        telemetry.start_invoke_local_agent.assert_not_called()
+        telemetry.invoke_local_agent.assert_not_called()
         assert handler._invocation_manager.get_invocation(child_run_id) is None
 
     def test_different_agent_name_creates_new_span(self):
@@ -227,7 +226,7 @@ class TestOnChainStartAgent:
         first_agent_inv = mock.MagicMock(spec=AgentInvocation)
         first_agent_inv.span = mock.MagicMock()
         first_agent_inv.span.is_recording.return_value = False
-        telemetry.start_invoke_local_agent.return_value = first_agent_inv
+        telemetry.invoke_local_agent.return_value = first_agent_inv
 
         handler.on_chain_start(
             serialized={"name": "math_agent"},
@@ -241,7 +240,7 @@ class TestOnChainStartAgent:
         second_agent_inv = mock.MagicMock(spec=AgentInvocation)
         second_agent_inv.span = mock.MagicMock()
         second_agent_inv.span.is_recording.return_value = False
-        telemetry.start_invoke_local_agent.return_value = second_agent_inv
+        telemetry.invoke_local_agent.return_value = second_agent_inv
 
         handler.on_chain_start(
             serialized={"name": "weather_agent"},
@@ -265,7 +264,7 @@ class TestOnChainStartAgent:
         parent_agent_inv = mock.MagicMock(spec=AgentInvocation)
         parent_agent_inv.span = mock.MagicMock()
         parent_agent_inv.span.is_recording.return_value = False
-        telemetry.start_invoke_local_agent.return_value = parent_agent_inv
+        telemetry.invoke_local_agent.return_value = parent_agent_inv
 
         handler.on_chain_start(
             serialized={"name": "Math_Agent"},
@@ -274,7 +273,7 @@ class TestOnChainStartAgent:
             parent_run_id=None,
             metadata={"agent_name": "Math_Agent"},
         )
-        telemetry.start_invoke_local_agent.reset_mock()
+        telemetry.invoke_local_agent.reset_mock()
 
         handler.on_chain_start(
             serialized={"name": "math_agent"},
@@ -285,7 +284,7 @@ class TestOnChainStartAgent:
         )
 
         # Same name (case-insensitive) → no new span
-        telemetry.start_invoke_local_agent.assert_not_called()
+        telemetry.invoke_local_agent.assert_not_called()
 
     def test_no_agent_name_registers_none_invocation(self):
         """When resolve_agent_name returns None the run_id must still be
@@ -304,7 +303,7 @@ class TestOnChainStartAgent:
             metadata={"otel_agent_span": True},
         )
 
-        telemetry.start_invoke_local_agent.assert_not_called()
+        telemetry.invoke_local_agent.assert_not_called()
         # run_id must still be registered (with None invocation) so traversal works
         assert run_id in handler._invocation_manager._invocations
         assert handler._invocation_manager.get_invocation(run_id) is None
@@ -326,7 +325,7 @@ class TestOnChainStartAgent:
         )
 
         # Parent: INVOKE_AGENT but no resolvable name → registers None
-        telemetry.start_invoke_local_agent.reset_mock()
+        telemetry.invoke_local_agent.reset_mock()
         handler.on_chain_start(
             serialized={},
             inputs={},
@@ -363,8 +362,8 @@ class TestOnChainStartUnclassified:
             parent_run_id=parent_run_id,
         )
 
-        telemetry.start_workflow.assert_not_called()
-        telemetry.start_invoke_local_agent.assert_not_called()
+        telemetry.workflow.assert_not_called()
+        telemetry.invoke_local_agent.assert_not_called()
         assert run_id in handler._invocation_manager._invocations
         assert handler._invocation_manager.get_invocation(run_id) is None
 

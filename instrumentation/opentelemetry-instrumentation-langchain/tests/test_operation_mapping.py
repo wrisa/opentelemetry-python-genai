@@ -3,7 +3,7 @@
 
 """Unit tests for operation_mapping module.
 
-Tests the public API: classify_chain_run, resolve_agent_name, should_ignore_chain.
+Tests the public API: classify_chain_run, resolve_agent_name.
 """
 
 import uuid
@@ -12,7 +12,6 @@ from opentelemetry.instrumentation.langchain.operation_mapping import (
     OperationName,
     classify_chain_run,
     resolve_agent_name,
-    should_ignore_chain,
 )
 
 # ---------------------------------------------------------------------------
@@ -86,104 +85,6 @@ class TestResolveAgentName:
         )
         assert result == "42"
         assert isinstance(result, str)
-
-
-# ---------------------------------------------------------------------------
-# should_ignore_chain
-# ---------------------------------------------------------------------------
-
-
-class TestShouldIgnoreChain:
-    def test_langgraph_start_node_is_suppressed(self):
-        assert (
-            should_ignore_chain(
-                metadata={"langgraph_node": "__start__"},
-                agent_name=None,
-                kwargs={},
-            )
-            is True
-        )
-
-    def test_otel_trace_false_is_suppressed(self):
-        assert (
-            should_ignore_chain(
-                metadata={"otel_trace": False},
-                agent_name=None,
-                kwargs={},
-            )
-            is True
-        )
-
-    def test_otel_agent_span_false_without_other_signals_is_suppressed(self):
-        assert (
-            should_ignore_chain(
-                metadata={"otel_agent_span": False},
-                agent_name=None,
-                kwargs={},
-            )
-            is True
-        )
-
-    def test_otel_agent_span_false_with_agent_name_is_not_suppressed(self):
-        # agent_name present overrides the False flag
-        assert (
-            should_ignore_chain(
-                metadata={"otel_agent_span": False, "agent_name": "my_agent"},
-                agent_name="my_agent",
-                kwargs={},
-            )
-            is False
-        )
-
-    def test_otel_agent_span_false_with_agent_type_is_not_suppressed(self):
-        assert (
-            should_ignore_chain(
-                metadata={"otel_agent_span": False, "agent_type": "react"},
-                agent_name=None,
-                kwargs={},
-            )
-            is False
-        )
-
-    def test_middleware_prefix_in_agent_name_is_suppressed(self):
-        assert (
-            should_ignore_chain(
-                metadata=None,
-                agent_name="Middleware.SomeThing",
-                kwargs={},
-            )
-            is True
-        )
-
-    def test_middleware_prefix_in_kwargs_name_is_suppressed(self):
-        assert (
-            should_ignore_chain(
-                metadata=None,
-                agent_name=None,
-                kwargs={"name": "Middleware.Router"},
-            )
-            is True
-        )
-
-    def test_normal_chain_is_not_suppressed(self):
-        assert (
-            should_ignore_chain(
-                metadata=None,
-                agent_name="my_agent",
-                kwargs={},
-            )
-            is False
-        )
-
-    def test_none_metadata_is_not_suppressed(self):
-        assert (
-            should_ignore_chain(
-                metadata=None,
-                agent_name=None,
-                kwargs={},
-            )
-            is False
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +243,24 @@ class TestClassifyChainRun:
             parent_run_id=uuid.uuid4(),
         )
         assert result is None
+
+    def test_otel_agent_span_false_with_agent_name_is_agent(self):
+        result = classify_chain_run(
+            serialized={},
+            metadata={"otel_agent_span": False, "agent_name": "my_agent"},
+            kwargs={},
+            parent_run_id=uuid.uuid4(),
+        )
+        assert result == OperationName.INVOKE_AGENT
+
+    def test_otel_agent_span_false_with_agent_type_is_agent(self):
+        result = classify_chain_run(
+            serialized={},
+            metadata={"otel_agent_span": False, "agent_type": "react"},
+            kwargs={},
+            parent_run_id=uuid.uuid4(),
+        )
+        assert result == OperationName.INVOKE_AGENT
 
     def test_non_langgraph_child_chain_suppressed(self):
         # Child chain with no agent or workflow signals → suppressed.
