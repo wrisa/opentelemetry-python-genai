@@ -55,6 +55,9 @@ def fixture_us_amazon_nova_lite_v1_0():
             region_name="us-west-2",
             aws_account_id="test_account",
         ),
+        aws_access_key_id="test_key",
+        aws_secret_access_key="test_secret",
+        region_name="us-west-2",
         provider="amazon",
         temperature=0.1,
         max_tokens=100,
@@ -140,4 +143,5 @@ def vcr_config():
                 "Set-Cookie": "test_set_cookie",
             }
         ),
+        "ignore_hosts": ["169.254.169.254"],
     }
