@@ -24,8 +24,6 @@ from .conformance.agent import AgentScenario
 from .conformance.inference import InferenceScenario
 from .conformance.workflow import WorkflowScenario
 
-pytestmark = pytest.mark.conformance
-
 
 @pytest.mark.parametrize(
     "scenario",
