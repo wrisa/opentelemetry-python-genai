@@ -17,7 +17,7 @@ Usage:
     handler = get_telemetry_handler()
 
     # Factory method: construct and start in one call, then stop or fail.
-    invocation = handler.start_inference("my-provider", request_model="my-model")
+    invocation = handler.inference("my-provider", request_model="my-model")
     invocation.input_messages = [...]
     invocation.temperature = 0.7
     try:
@@ -38,7 +38,6 @@ Usage:
 from __future__ import annotations
 
 import os
-from contextlib import AbstractContextManager
 
 from opentelemetry._logs import (
     LoggerProvider,
@@ -64,6 +63,7 @@ from opentelemetry.util.genai.environment_variables import (
 from opentelemetry.util.genai.invocation import (
     EmbeddingInvocation,
     InferenceInvocation,
+    RetrievalInvocation,
     ToolInvocation,
     WorkflowInvocation,
 )
@@ -133,7 +133,6 @@ class TelemetryHandler:
         return self._capture_content
 
     # New-style factory methods: construct + start in one call, handler stored on invocation
-
     def start_inference(
         self,
         provider: str,
@@ -144,6 +143,9 @@ class TelemetryHandler:
         operation_name: str | None = None,
     ) -> InferenceInvocation:
         """Create and start an LLM inference invocation.
+
+        .. deprecated:: 1.0b0
+            Use ``handler.inference()`` instead.
 
         Set remaining attributes (input_messages, temperature, etc.) on the
         returned invocation, then call invocation.stop() or invocation.fail().
@@ -164,7 +166,7 @@ class TelemetryHandler:
         """Start an LLM invocation.
 
         .. deprecated::
-            Use ``handler.start_inference()`` instead.
+            Use ``handler.inference()`` instead.
         """
         invocation._start_with_handler(
             self._tracer,
@@ -184,6 +186,9 @@ class TelemetryHandler:
     ) -> EmbeddingInvocation:
         """Create and start an Embedding invocation.
 
+        .. deprecated:: 1.0b0
+            Use ``handler.embedding()`` instead.
+
         Set remaining attributes (encoding_formats, etc.) on the returned
         invocation, then call invocation.stop() or invocation.fail().
         """
@@ -198,16 +203,47 @@ class TelemetryHandler:
             server_port=server_port,
         )
 
+    def retrieval(
+        self,
+        *,
+        data_source_id: str | None = None,
+        provider: str | None = None,
+        request_model: str | None = None,
+        server_address: str | None = None,
+        server_port: int | None = None,
+    ) -> RetrievalInvocation:
+        """Returns a Retrieval invocation. Starts span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
+
+        Only set data attributes on the invocation object, do not modify the span or context.
+        """
+        return RetrievalInvocation(
+            self._tracer,
+            self._metrics_recorder,
+            self._logger,
+            self._completion_hook,
+            data_source_id=data_source_id,
+            provider=provider,
+            request_model=request_model,
+            server_address=server_address,
+            server_port=server_port,
+        )
+
     def start_tool(
         self,
         name: str,
         *,
-        arguments: object = None,
         tool_call_id: str | None = None,
         tool_type: str | None = None,
         tool_description: str | None = None,
     ) -> ToolInvocation:
         """Create and start a tool invocation.
+
+        .. deprecated:: 1.0b0
+            Use ``handler.tool()`` instead.
 
         Set tool_result on the returned invocation when done, then call
         invocation.stop() or invocation.fail().
@@ -218,7 +254,6 @@ class TelemetryHandler:
             self._logger,
             self._completion_hook,
             name,
-            arguments=arguments,
             tool_call_id=tool_call_id,
             tool_type=tool_type,
             tool_description=tool_description,
@@ -230,6 +265,9 @@ class TelemetryHandler:
         name: str | None = None,
     ) -> WorkflowInvocation:
         """Create and start a workflow invocation.
+
+        .. deprecated:: 1.0b0
+            Use ``handler.workflow()`` instead.
 
         Set remaining attributes on the returned invocation, then call
         invocation.stop() or invocation.fail().
@@ -246,7 +284,7 @@ class TelemetryHandler:
         """Finalize an LLM invocation successfully and end its span.
 
         .. deprecated::
-            Use ``handler.start_inference()``  and then ``inference.stop()`` instead.
+            Use ``handler.inference()``  and then ``inference.stop()`` instead.
         """
         invocation._sync_to_invocation()
         if invocation._inference_invocation is not None:
@@ -261,12 +299,14 @@ class TelemetryHandler:
         """Fail an LLM invocation and end its span with error status.
 
         .. deprecated::
-            Use ``handler.start_inference()``  and then ``inference.fail()`` instead.
+            Use ``handler.inference()``  and then ``inference.fail()`` instead.
         """
         invocation._sync_to_invocation()
         if invocation._inference_invocation is not None:
             invocation._inference_invocation.fail(error)
         return invocation
+
+    # New-style factory methods: construct + start in one call, handler stored on invocation
 
     def inference(
         self,
@@ -275,21 +315,27 @@ class TelemetryHandler:
         request_model: str | None = None,
         server_address: str | None = None,
         server_port: int | None = None,
-    ) -> AbstractContextManager[InferenceInvocation]:
-        """Context manager for LLM inference invocations.
+        operation_name: str | None = None,
+    ) -> InferenceInvocation:
+        """Returns an Inference invocation. Starts span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
 
         Only set data attributes on the invocation object, do not modify the span or context.
-
-        Starts the span on entry. On normal exit, finalizes the invocation and ends the span.
-        If an exception occurs inside the context, marks the span as error, ends it, and
-        re-raises the original exception.
         """
-        return self.start_inference(
+        return InferenceInvocation(
+            self._tracer,
+            self._metrics_recorder,
+            self._logger,
+            self._completion_hook,
             provider=provider,
             request_model=request_model,
             server_address=server_address,
             server_port=server_port,
-        )._managed()
+            operation_name=operation_name,
+        )
 
     def embedding(
         self,
@@ -298,46 +344,54 @@ class TelemetryHandler:
         request_model: str | None = None,
         server_address: str | None = None,
         server_port: int | None = None,
-    ) -> AbstractContextManager[EmbeddingInvocation]:
-        """Context manager for Embedding invocations.
+    ) -> EmbeddingInvocation:
+        """Returns an Embedding invocation. Starts span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
 
         Only set data attributes on the invocation object, do not modify the span or context.
-
-        Starts the span on entry. On normal exit, finalizes the invocation and ends the span.
-        If an exception occurs inside the context, marks the span as error, ends it, and
-        re-raises the original exception.
         """
-        return self.start_embedding(
+        return EmbeddingInvocation(
+            self._tracer,
+            self._metrics_recorder,
+            self._logger,
+            self._completion_hook,
             provider=provider,
             request_model=request_model,
             server_address=server_address,
             server_port=server_port,
-        )._managed()
+        )
 
     def tool(
         self,
         name: str,
         *,
-        arguments: object = None,
         tool_call_id: str | None = None,
         tool_type: str | None = None,
         tool_description: str | None = None,
-    ) -> AbstractContextManager[ToolInvocation]:
-        """Context manager for Tool invocations.
+    ) -> ToolInvocation:
+        """Returns a Tool invocation. Starts span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
 
         Only set data attributes on the invocation object, do not modify the span or context.
-
-        Starts the span on entry. On normal exit, finalizes the invocation and ends the span.
-        If an exception occurs inside the context, marks the span as error, ends it, and
-        re-raises the original exception.
+        Recommended to set ``invocation.arguments`` and ``invocation.tool_result`` on the
+        invocation object but only if `invocation.should_capture_content_on_span` is True.
         """
-        return self.start_tool(
+        return ToolInvocation(
+            self._tracer,
+            self._metrics_recorder,
+            self._logger,
+            self._completion_hook,
             name,
-            arguments=arguments,
             tool_call_id=tool_call_id,
             tool_type=tool_type,
             tool_description=tool_description,
-        )._managed()
+        )
 
     def start_invoke_local_agent(
         self,
@@ -347,6 +401,9 @@ class TelemetryHandler:
         agent_name: str | None = None,
     ) -> AgentInvocation:
         """Create and start a local agent invocation (INTERNAL span kind).
+
+        .. deprecated:: 1.0b0
+            Use ``handler.invoke_local_agent()`` instead.
 
         Use for agents running within the same process (e.g. LangChain, CrewAI).
 
@@ -375,6 +432,9 @@ class TelemetryHandler:
     ) -> AgentInvocation:
         """Create and start a remote agent invocation (CLIENT span kind).
 
+        .. deprecated:: 1.0b0
+            Use ``handler.invoke_remote_agent()`` instead.
+
         Use for agents invoked over a remote service (e.g. OpenAI Assistants, AWS Bedrock).
 
         Set remaining attributes (agent_name, etc.) on the returned invocation,
@@ -399,22 +459,27 @@ class TelemetryHandler:
         *,
         request_model: str | None = None,
         agent_name: str | None = None,
-    ) -> AbstractContextManager[AgentInvocation]:
-        """Context manager for local agent invocations (INTERNAL span kind).
+    ) -> AgentInvocation:
+        """Returns an agent invocation (INTERNAL span kind). Starts span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
 
         Use for agents running within the same process (e.g. LangChain, CrewAI).
 
         Only set data attributes on the invocation object, do not modify the span or context.
-
-        Starts the span on entry. On normal exit, finalizes the invocation and ends the span.
-        If an exception occurs inside the context, marks the span as error, ends it, and
-        re-raises the original exception.
         """
-        return self.start_invoke_local_agent(
+        return AgentInvocation(
+            self._tracer,
+            self._metrics_recorder,
+            self._logger,
+            self._completion_hook,
             provider,
+            span_kind=SpanKind.INTERNAL,
             request_model=request_model,
             agent_name=agent_name,
-        )._managed()
+        )
 
     def invoke_remote_agent(
         self,
@@ -424,38 +489,49 @@ class TelemetryHandler:
         server_address: str | None = None,
         server_port: int | None = None,
         agent_name: str | None = None,
-    ) -> AbstractContextManager[AgentInvocation]:
-        """Context manager for remote agent invocations (CLIENT span kind).
+    ) -> AgentInvocation:
+        """Returns an agent invocation (CLIENT span kind). Starts span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
 
         Use for agents invoked over a remote service (e.g. OpenAI Assistants, AWS Bedrock).
 
         Only set data attributes on the invocation object, do not modify the span or context.
-
-        Starts the span on entry. On normal exit, finalizes the invocation and ends the span.
-        If an exception occurs inside the context, marks the span as error, ends it, and
-        re-raises the original exception.
         """
-        return self.start_invoke_remote_agent(
+        return AgentInvocation(
+            self._tracer,
+            self._metrics_recorder,
+            self._logger,
+            self._completion_hook,
             provider,
+            span_kind=SpanKind.CLIENT,
             request_model=request_model,
             agent_name=agent_name,
             server_address=server_address,
             server_port=server_port,
-        )._managed()
+        )
 
     def workflow(
         self,
         name: str | None = None,
-    ) -> AbstractContextManager[WorkflowInvocation]:
-        """Context manager for Workflow invocations.
+    ) -> WorkflowInvocation:
+        """Returns a Workflow invocation. Starts a span when called.
+
+        Returned object can be used as a ContextManager which automatically calls `stop` or `fail`
+        to finalize the span upon exiting. If not used as a ContextManager, the caller is
+        responsible for calling `stop` or `fail` to finalize the span.
 
         Only set data attributes on the invocation object, do not modify the span or context.
-
-        Starts the span on entry. On normal exit, finalizes the invocation and ends the span.
-        If an exception occurs inside the context, marks the span as error, ends it, and
-        re-raises the original exception.
         """
-        return self.start_workflow(name=name)._managed()
+        return WorkflowInvocation(
+            self._tracer,
+            self._metrics_recorder,
+            self._logger,
+            self._completion_hook,
+            name,
+        )
 
 
 def get_telemetry_handler(

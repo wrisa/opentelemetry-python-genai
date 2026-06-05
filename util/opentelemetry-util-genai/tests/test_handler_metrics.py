@@ -27,7 +27,7 @@ class TelemetryHandlerMetricsTest(TestBase):
         )
         # Patch default_timer during start to ensure monotonic_start_s
         with patch("timeit.default_timer", return_value=1000.0):
-            invocation = handler.start_inference("prov", request_model="model")
+            invocation = handler.inference("prov", request_model="model")
         invocation.input_tokens = 5
         invocation.output_tokens = 7
 
@@ -82,7 +82,7 @@ class TelemetryHandlerMetricsTest(TestBase):
             meter_provider=self.meter_provider,
         )
 
-        invocation = handler.start_inference(
+        invocation = handler.inference(
             "prov",
             request_model="model",
             server_address="custom.server.com",
@@ -121,7 +121,7 @@ class TelemetryHandlerMetricsTest(TestBase):
         )
         # Patch default_timer during start to ensure monotonic_start_s
         with patch("timeit.default_timer", return_value=2000.0):
-            invocation = handler.start_inference("", request_model="err-model")
+            invocation = handler.inference("", request_model="err-model")
         invocation.input_tokens = 11
 
         error = Error(message="boom", type=ValueError)
@@ -193,7 +193,7 @@ class TelemetryHandlerMetricsTest(TestBase):
         )
         # Patch default_timer during start to ensure monotonic_start_s
         with patch("timeit.default_timer", return_value=1000.0):
-            invocation = handler.start_embedding(
+            invocation = handler.embedding(
                 "embed-prov", request_model="embed-model"
             )
         invocation.input_tokens = 100
@@ -242,7 +242,7 @@ class TelemetryHandlerMetricsTest(TestBase):
             tracer_provider=self.tracer_provider,
             meter_provider=self.meter_provider,
         )
-        invocation = handler.start_embedding(
+        invocation = handler.embedding(
             "embed-prov",
             request_model="embed-model",
             server_address="embed.server.com",
@@ -279,7 +279,7 @@ class TelemetryHandlerMetricsTest(TestBase):
             meter_provider=self.meter_provider,
         )
         with patch("timeit.default_timer", return_value=3000.0):
-            invocation = handler.start_embedding(
+            invocation = handler.embedding(
                 "embed-prov", request_model="embed-err-model"
             )
 
@@ -313,7 +313,7 @@ class TelemetryHandlerMetricsTest(TestBase):
             tracer_provider=self.tracer_provider,
             meter_provider=self.meter_provider,
         )
-        invocation = handler.start_embedding(
+        invocation = handler.embedding(
             "embed-prov", request_model="embed-model"
         )
         # input_tokens is not set
@@ -343,7 +343,7 @@ class TelemetryHandlerToolMetricsTest(TestBase):
             meter_provider=self.meter_provider,
         )
         with patch("timeit.default_timer", return_value=1000.0):
-            invocation = handler.start_tool("get_weather")
+            invocation = handler.tool("get_weather")
         invocation.metric_attributes = {"custom.key": "custom_value"}
 
         with patch("timeit.default_timer", return_value=1002.5):
@@ -371,7 +371,7 @@ class TelemetryHandlerToolMetricsTest(TestBase):
             meter_provider=self.meter_provider,
         )
         with patch("timeit.default_timer", return_value=500.0):
-            invocation = handler.start_tool("failing_tool")
+            invocation = handler.tool("failing_tool")
 
         error = Error(message="Tool execution failed", type=RuntimeError)
         with patch("timeit.default_timer", return_value=501.5):
@@ -391,4 +391,131 @@ class TelemetryHandlerToolMetricsTest(TestBase):
             "execute_tool",
         )
         self.assertAlmostEqual(duration_point.sum, 1.5, places=3)
+        self.assertNotIn("gen_ai.client.token.usage", metrics)
+
+
+class TelemetryHandlerRetrievalMetricsTest(TestBase):
+    def _harvest_metrics(self) -> Dict[str, List[Any]]:
+        metrics = self.get_sorted_metrics()
+        metrics_by_name: Dict[str, List[Any]] = {}
+        for metric in metrics or []:
+            points = metric.data.data_points or []
+            metrics_by_name.setdefault(metric.name, []).extend(points)
+        return metrics_by_name
+
+    def test_stop_retrieval_records_duration(self) -> None:
+        handler = TelemetryHandler(
+            tracer_provider=self.tracer_provider,
+            meter_provider=self.meter_provider,
+        )
+        with patch("timeit.default_timer", return_value=1000.0):
+            invocation = handler.retrieval(
+                provider="pinecone", request_model="text-embedding-ada-002"
+            )
+
+        with patch("timeit.default_timer", return_value=1001.5):
+            invocation.stop()
+
+        metrics = self._harvest_metrics()
+        self.assertIn("gen_ai.client.operation.duration", metrics)
+        duration_points = metrics["gen_ai.client.operation.duration"]
+        self.assertEqual(len(duration_points), 1)
+        duration_point = duration_points[0]
+
+        self.assertEqual(
+            duration_point.attributes[GenAI.GEN_AI_OPERATION_NAME],
+            GenAI.GenAiOperationNameValues.RETRIEVAL.value,
+        )
+        self.assertEqual(
+            duration_point.attributes[GenAI.GEN_AI_PROVIDER_NAME], "pinecone"
+        )
+        self.assertEqual(
+            duration_point.attributes[GenAI.GEN_AI_REQUEST_MODEL],
+            "text-embedding-ada-002",
+        )
+        self.assertAlmostEqual(duration_point.sum, 1.5, places=3)
+        self.assertNotIn("gen_ai.client.token.usage", metrics)
+
+    def test_stop_retrieval_excludes_data_source_id_from_metrics(self) -> None:
+        handler = TelemetryHandler(
+            tracer_provider=self.tracer_provider,
+            meter_provider=self.meter_provider,
+        )
+        invocation = handler.retrieval(
+            data_source_id="DS_HIGH_CARDINALITY", provider="weaviate"
+        )
+        invocation.stop()
+
+        metrics = self._harvest_metrics()
+        self.assertIn("gen_ai.client.operation.duration", metrics)
+        duration_points = metrics["gen_ai.client.operation.duration"]
+        self.assertEqual(len(duration_points), 1)
+        duration_point = duration_points[0]
+
+        self.assertNotIn(
+            GenAI.GEN_AI_DATA_SOURCE_ID, duration_point.attributes
+        )
+        self.assertEqual(
+            duration_point.attributes[GenAI.GEN_AI_PROVIDER_NAME], "weaviate"
+        )
+
+    def test_stop_retrieval_records_duration_with_additional_attributes(
+        self,
+    ) -> None:
+        handler = TelemetryHandler(
+            tracer_provider=self.tracer_provider,
+            meter_provider=self.meter_provider,
+        )
+        invocation = handler.retrieval(
+            provider="pinecone",
+            server_address="db.example.com",
+            server_port=443,
+        )
+        invocation.metric_attributes = {"custom.retrieval.attr": "val"}
+        invocation.attributes = {"should not be on metrics": "value"}
+        invocation.stop()
+
+        metrics = self._harvest_metrics()
+        self.assertIn("gen_ai.client.operation.duration", metrics)
+        duration_points = metrics["gen_ai.client.operation.duration"]
+        self.assertEqual(len(duration_points), 1)
+        duration_point = duration_points[0]
+
+        self.assertEqual(
+            duration_point.attributes["server.address"], "db.example.com"
+        )
+        self.assertEqual(duration_point.attributes["server.port"], 443)
+        self.assertEqual(
+            duration_point.attributes["custom.retrieval.attr"], "val"
+        )
+        self.assertIsNone(
+            duration_point.attributes.get("should not be on metrics")
+        )
+
+    def test_fail_retrieval_records_duration_with_error(self) -> None:
+        handler = TelemetryHandler(
+            tracer_provider=self.tracer_provider,
+            meter_provider=self.meter_provider,
+        )
+        with patch("timeit.default_timer", return_value=2000.0):
+            invocation = handler.retrieval(provider="pinecone")
+
+        error = Error(message="retrieval failed", type=ConnectionError)
+        with patch("timeit.default_timer", return_value=2003.0):
+            invocation.fail(error)
+
+        metrics = self._harvest_metrics()
+        self.assertIn("gen_ai.client.operation.duration", metrics)
+        duration_points = metrics["gen_ai.client.operation.duration"]
+        self.assertEqual(len(duration_points), 1)
+        duration_point = duration_points[0]
+
+        self.assertEqual(
+            duration_point.attributes["error.type"], "ConnectionError"
+        )
+        self.assertEqual(
+            duration_point.attributes[GenAI.GEN_AI_OPERATION_NAME],
+            GenAI.GenAiOperationNameValues.RETRIEVAL.value,
+        )
+        self.assertAlmostEqual(duration_point.sum, 3.0, places=3)
         self.assertNotIn("gen_ai.client.token.usage", metrics)
