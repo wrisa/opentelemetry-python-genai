@@ -20,9 +20,9 @@ from opentelemetry.instrumentation.genai.langchain.operation_mapping import (
     resolve_agent_name,
 )
 from opentelemetry.instrumentation.genai.langchain.utils import (
-    _prepare_tool_definitions,
     make_input_message,
     make_last_output_message,
+    prepare_tool_definitions,
 )
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.invocation import (
@@ -294,7 +294,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
                 "invocation_params"
             ].get("functions")
             if tools:
-                tool_definitions = _prepare_tool_definitions(tools)
+                tool_definitions = prepare_tool_definitions(tools)
                 llm_invocation.tool_definitions = tool_definitions
         self._invocation_manager.add_invocation_state(
             run_id=run_id,
@@ -453,8 +453,9 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         else:
             arguments = None
         tool_invocation = self._telemetry_handler.start_tool(
-            name=name, tool_description=description, arguments=arguments
+            name=name, tool_description=description
         )
+        tool_invocation.arguments = arguments
         self._invocation_manager.add_invocation_state(
             run_id, parent_run_id, tool_invocation
         )

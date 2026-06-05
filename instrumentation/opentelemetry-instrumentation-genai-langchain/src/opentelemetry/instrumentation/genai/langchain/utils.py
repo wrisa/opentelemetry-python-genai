@@ -14,8 +14,6 @@ from opentelemetry.util.genai.types import (
     ToolDefinition,
 )
 
-__all__ = ["_prepare_tool_definitions"]
-
 
 def _get_property_value(obj: Any, property_name: str) -> Any:
     if isinstance(obj, dict):
@@ -24,7 +22,7 @@ def _get_property_value(obj: Any, property_name: str) -> Any:
     return getattr(obj, property_name, None)
 
 
-def _prepare_tool_definitions(tools: list[Any]) -> list[ToolDefinition] | None:
+def prepare_tool_definitions(tools: list[Any]) -> list[ToolDefinition] | None:
     if not tools:
         return None
 

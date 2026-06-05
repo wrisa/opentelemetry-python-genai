@@ -289,7 +289,6 @@ class LLMInvocation:
         inv.max_tokens = self.max_tokens
         inv.stop_sequences = self.stop_sequences
         inv.seed = self.seed
-        inv.tool_definitions = self.tool_definitions
         inv.attributes.update(self.attributes)
         inv.metric_attributes.update(self.metric_attributes)
         self._inference_invocation = inv
@@ -317,7 +316,6 @@ class LLMInvocation:
         inv.seed = self.seed
         inv.server_address = self.server_address
         inv.server_port = self.server_port
-        inv.tool_definitions = self.tool_definitions
         inv.attributes = self.attributes
         inv.metric_attributes = self.metric_attributes
 

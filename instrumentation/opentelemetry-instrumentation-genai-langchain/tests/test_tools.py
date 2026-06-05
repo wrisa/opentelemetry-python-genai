@@ -18,13 +18,13 @@ from langchain_core.tools import tool
 from opentelemetry.instrumentation._semconv import (
     _OpenTelemetrySemanticConventionStability,
 )
-from opentelemetry.instrumentation.langchain import LangChainInstrumentor
-from opentelemetry.instrumentation.langchain.callback_handler import (
+from opentelemetry.instrumentation.genai.langchain import LangChainInstrumentor
+from opentelemetry.instrumentation.genai.langchain.callback_handler import (
     OpenTelemetryLangChainCallbackHandler,
 )
-from opentelemetry.instrumentation.langchain.utils import (
+from opentelemetry.instrumentation.genai.langchain.utils import (
     _get_property_value,
-    _prepare_tool_definitions,
+    prepare_tool_definitions,
 )
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import (
@@ -88,12 +88,12 @@ def test_get_property_value_from_object_missing_attr():
 
 
 # ---------------------------------------------------------------------------
-# Unit tests for _prepare_tool_definitions
+# Unit tests for prepare_tool_definitions
 # ---------------------------------------------------------------------------
 
 
 def test_prepare_tool_definitions_returns_none_for_empty():
-    assert _prepare_tool_definitions([]) is None
+    assert prepare_tool_definitions([]) is None
 
 
 def test_prepare_tool_definitions_dict_tools():
@@ -113,7 +113,7 @@ def test_prepare_tool_definitions_dict_tools():
             },
         }
     ]
-    result = _prepare_tool_definitions(tools)
+    result = prepare_tool_definitions(tools)
     assert result is not None
     assert len(result) == 1
     defn = result[0]
@@ -125,7 +125,7 @@ def test_prepare_tool_definitions_dict_tools():
 
 def test_prepare_tool_definitions_skips_non_function_type():
     tools = [{"type": "retrieval", "retrieval": {}}]
-    result = _prepare_tool_definitions(tools)
+    result = prepare_tool_definitions(tools)
     # No function-type tools → empty list returned (not None, but falsy)
     assert not result
 
@@ -144,7 +144,7 @@ def test_prepare_tool_definitions_multiple_tools():
             },
         },
     ]
-    result = _prepare_tool_definitions(tools)
+    result = prepare_tool_definitions(tools)
     assert result is not None
     assert len(result) == 2
     assert result[0].name == "add"
@@ -158,7 +158,7 @@ def test_prepare_tool_definitions_missing_name_defaults_to_empty_string():
             "function": {"description": "No name tool"},
         }
     ]
-    result = _prepare_tool_definitions(tools)
+    result = prepare_tool_definitions(tools)
     assert result is not None
     assert len(result) == 1
     assert result[0].name == ""
@@ -171,7 +171,7 @@ def test_prepare_tool_definitions_none_description_stays_none():
             "function": {"name": "no_desc"},
         }
     ]
-    result = _prepare_tool_definitions(tools)
+    result = prepare_tool_definitions(tools)
     assert result is not None
     assert result[0].description is None
 
@@ -188,7 +188,7 @@ def test_prepare_tool_definitions_object_tools():
         type = "function"
         function = FuncDef()
 
-    result = _prepare_tool_definitions([ToolDef()])
+    result = prepare_tool_definitions([ToolDef()])
     assert result is not None
     assert len(result) == 1
     assert result[0].name == "get_weather"
@@ -249,6 +249,10 @@ def test_on_tool_start_and_end_creates_span(monkeypatch):
     monkeypatch.setenv(
         "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
     )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
     tracer_provider, span_exporter, logger_provider, meter_provider = (
         _make_providers()
     )
@@ -289,6 +293,10 @@ def test_on_tool_start_with_string_input(monkeypatch):
     monkeypatch.setenv(
         "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
     )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
     tracer_provider, span_exporter, logger_provider, meter_provider = (
         _make_providers()
     )
@@ -577,3 +585,354 @@ def test_tool_span_created_via_instrumentor(monkeypatch):
         assert attrs[gen_ai_attributes.GEN_AI_TOOL_NAME] == "multiply"
     finally:
         instrumentor.uninstrument()
+
+
+# ---------------------------------------------------------------------------
+# Content capturing off — arguments and result suppressed
+# ---------------------------------------------------------------------------
+
+
+def test_on_tool_start_and_end_no_content_capture_suppresses_arguments(
+    monkeypatch,
+):
+    """Without content capture, arguments and result are absent from the span."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    _enable_experimental_mode()
+    # OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT intentionally not set
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "multiply", "description": "Multiply two numbers"},
+        input_str="",
+        run_id=run_id,
+        inputs={"a": 3, "b": 4},
+    )
+    output = MagicMock()
+    output.content = "12"
+    output.tool_call_id = "call_abc"
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    assert attrs[gen_ai_attributes.GEN_AI_TOOL_NAME] == "multiply"
+    assert gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS not in attrs
+    assert gen_ai_attributes.GEN_AI_TOOL_CALL_RESULT not in attrs
+
+
+def test_on_tool_end_captures_result_with_span_only_mode(monkeypatch):
+    """tool_result is set on the span when content capture is SPAN_ONLY."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "lookup"},
+        input_str="query",
+        run_id=run_id,
+    )
+    output = MagicMock()
+    output.content = "result text"
+    output.tool_call_id = None
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_RESULT] == "result text"
+
+
+# ---------------------------------------------------------------------------
+# on_tool_end attribute types
+# ---------------------------------------------------------------------------
+
+
+def test_on_tool_end_sets_tool_call_id_attribute(monkeypatch):
+    """tool_call_id from the output object is set on the span."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "mytool"},
+        input_str="",
+        run_id=run_id,
+    )
+    output = MagicMock()
+    output.content = "done"
+    output.tool_call_id = "call_xyz"
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ID] == "call_xyz"
+
+
+def test_on_tool_end_with_none_tool_call_id_omits_attribute(monkeypatch):
+    """tool_call_id is absent when the output carries no call id."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "mytool"},
+        input_str="",
+        run_id=run_id,
+    )
+    output = MagicMock()
+    output.content = "done"
+    output.tool_call_id = None
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    assert gen_ai_attributes.GEN_AI_TOOL_CALL_ID not in attrs
+
+
+# ---------------------------------------------------------------------------
+# on_tool_end / on_tool_error with unknown run_id — must not raise
+# ---------------------------------------------------------------------------
+
+
+def test_on_tool_end_unknown_run_id_does_not_raise(monkeypatch):
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    output = MagicMock()
+    output.content = "result"
+    output.tool_call_id = None
+    # No on_tool_start was called — should be a no-op
+    handler.on_tool_end(output=output, run_id=uuid4())
+
+    assert len(span_exporter.get_finished_spans()) == 0
+
+
+def test_on_tool_error_unknown_run_id_does_not_raise(monkeypatch):
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    handler.on_tool_error(error=RuntimeError("boom"), run_id=uuid4())
+
+    assert len(span_exporter.get_finished_spans()) == 0
+
+
+# ---------------------------------------------------------------------------
+# on_tool_start: inputs=None falls back to input_str
+# ---------------------------------------------------------------------------
+
+
+def test_on_tool_start_uses_input_str_when_inputs_is_none(monkeypatch):
+    """When inputs kwarg is absent (None), input_str is used for arguments."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    # inputs not passed → defaults to None → callback uses input_str
+    handler.on_tool_start(
+        serialized={"name": "greet"},
+        input_str="hello world",
+        run_id=run_id,
+    )
+    output = MagicMock()
+    output.content = "hi"
+    output.tool_call_id = None
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == "hello world"
+
+
+def test_on_tool_start_inputs_takes_priority_over_input_str(monkeypatch):
+    """When both inputs dict and input_str are provided, inputs dict wins."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "add"},
+        input_str="ignored",
+        run_id=run_id,
+        inputs={"x": 1, "y": 2},
+    )
+    output = MagicMock()
+    output.content = "3"
+    output.tool_call_id = None
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == json.dumps(
+        {"x": 1, "y": 2}
+    )
+
+
+# ---------------------------------------------------------------------------
+# on_chat_model_start: functions key as alternative to tools
+# ---------------------------------------------------------------------------
+
+
+def test_on_chat_model_start_with_functions_key_sets_definitions(monkeypatch):
+    """Tool definitions are also picked up from the 'functions' invocation param."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    functions = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get current weather",
+            },
+        }
+    ]
+
+    handler.on_chat_model_start(
+        serialized=_OPENAI_SERIALIZED,
+        messages=[[HumanMessage(content="What's the weather?")]],
+        run_id=run_id,
+        metadata=_OPENAI_METADATA,
+        invocation_params={
+            **_OPENAI_INVOCATION_PARAMS,
+            "functions": functions,
+        },
+    )
+    ai_msg = AIMessage(content="It is sunny.")
+    ai_msg.response_metadata = {"finish_reason": "stop"}
+    generation = ChatGeneration(message=ai_msg, text="It is sunny.")
+    generation.generation_info = {"finish_reason": "stop"}
+    handler.on_llm_end(
+        response=LLMResult(generations=[[generation]]), run_id=run_id
+    )
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    assert gen_ai_attributes.GEN_AI_TOOL_DEFINITIONS in attrs
+    assert "get_weather" in attrs[gen_ai_attributes.GEN_AI_TOOL_DEFINITIONS]
+
+
+def test_on_chat_model_start_without_tools_omits_definitions(monkeypatch):
+    """No tool_definitions attribute when invocation_params has no tools."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized=_OPENAI_SERIALIZED,
+        messages=[[HumanMessage(content="Hello")]],
+        run_id=run_id,
+        metadata=_OPENAI_METADATA,
+        invocation_params=_OPENAI_INVOCATION_PARAMS,
+    )
+    ai_msg = AIMessage(content="Hi")
+    ai_msg.response_metadata = {"finish_reason": "stop"}
+    generation = ChatGeneration(message=ai_msg, text="Hi")
+    generation.generation_info = {"finish_reason": "stop"}
+    handler.on_llm_end(
+        response=LLMResult(generations=[[generation]]), run_id=run_id
+    )
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert gen_ai_attributes.GEN_AI_TOOL_DEFINITIONS not in spans[0].attributes
