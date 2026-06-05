@@ -454,7 +454,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         else:
             arguments = None
         tool_invocation = self._telemetry_handler.start_tool(
-            name=name, tool_description=description
+            name=name, tool_description=description, tool_type="function"
         )
         tool_invocation.arguments = arguments
         self._invocation_manager.add_invocation_state(
