@@ -280,6 +280,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
 
         llm_invocation = self._telemetry_handler.inference(
             provider,
+            request_model=request_model,
         )
         llm_invocation.input_messages = input_messages
         llm_invocation.top_p = top_p
