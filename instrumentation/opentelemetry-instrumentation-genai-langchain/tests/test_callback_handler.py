@@ -11,6 +11,7 @@ the callback-handler logic and the invocation-manager bookkeeping.
 import uuid
 from unittest import mock
 
+from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage
 
 from opentelemetry.instrumentation.genai.langchain.callback_handler import (
@@ -24,6 +25,7 @@ from opentelemetry.instrumentation.genai.langchain.utils import (
 )
 from opentelemetry.util.genai.invocation import (
     AgentInvocation,
+    RetrievalInvocation,
     WorkflowInvocation,
 )
 from opentelemetry.util.genai.types import InputMessage, OutputMessage, Text
@@ -55,6 +57,15 @@ def _make_invoke_local_agent_side_effect(inv: mock.MagicMock):
     return _side_effect
 
 
+def _make_retrieval_inv_mock() -> mock.MagicMock:
+    retrieval_inv = mock.MagicMock(spec=RetrievalInvocation)
+    retrieval_inv.span = mock.MagicMock()
+    retrieval_inv.span.is_recording.return_value = False
+    retrieval_inv.query_text = None
+    retrieval_inv.documents = None
+    return retrieval_inv
+
+
 def _make_handler():
     """Return a handler wired to a MagicMock TelemetryHandler."""
     telemetry = mock.MagicMock()
@@ -74,6 +85,14 @@ def _make_handler():
 
     handler = OpenTelemetryLangChainCallbackHandler(telemetry)
     return handler, telemetry, workflow_inv, agent_inv
+
+
+def _make_handler_with_retrieval():
+    """Like _make_handler but also wires up a retrieval mock."""
+    handler, telemetry, workflow_inv, agent_inv = _make_handler()
+    retrieval_inv = _make_retrieval_inv_mock()
+    telemetry.retrieval.return_value = retrieval_inv
+    return handler, telemetry, retrieval_inv
 
 
 def _run_id():
@@ -1015,3 +1034,223 @@ class TestOutputMessagesOnInvocations:
         assigned = agent_inv.output_messages
         assert len(assigned) == 1
         assert assigned[0].parts[0].content == "the answer is 7"
+
+
+# ---------------------------------------------------------------------------
+# on_retriever_start / on_retriever_end / on_retriever_error
+# ---------------------------------------------------------------------------
+
+
+class TestOnRetrieverStart:
+    def test_retrieval_span_created(self):
+        handler, telemetry, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={},
+            query="what is AI?",
+            run_id=run_id,
+        )
+
+        telemetry.retrieval.assert_called_once()
+        assert (
+            handler._invocation_manager.get_invocation(run_id) is retrieval_inv
+        )
+
+    def test_query_text_set_on_invocation(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={},
+            query="semantic search query",
+            run_id=run_id,
+        )
+
+        assert retrieval_inv.query_text == "semantic search query"
+
+    def test_provider_passed_from_metadata(self):
+        handler, telemetry, _ = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={},
+            query="q",
+            run_id=run_id,
+            metadata={"ls_vector_store_provider": "Chroma"},
+        )
+
+        telemetry.retrieval.assert_called_once_with(
+            provider="Chroma", request_model=None
+        )
+
+    def test_provider_none_when_metadata_absent(self):
+        handler, telemetry, _ = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={},
+            query="q",
+            run_id=run_id,
+        )
+
+        telemetry.retrieval.assert_called_once_with(
+            provider=None, request_model=None
+        )
+
+    def test_request_model_passed_from_ls_embedding_model(self):
+        handler, telemetry, _ = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={},
+            query="q",
+            run_id=run_id,
+            metadata={
+                "ls_vector_store_provider": "Chroma",
+                "ls_embedding_model": "text-embedding-3-small",
+            },
+        )
+
+        telemetry.retrieval.assert_called_once_with(
+            provider="Chroma", request_model="text-embedding-3-small"
+        )
+
+    def test_request_model_none_when_ls_embedding_model_absent(self):
+        handler, telemetry, _ = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={},
+            query="q",
+            run_id=run_id,
+            metadata={"ls_vector_store_provider": "Chroma"},
+        )
+
+        telemetry.retrieval.assert_called_once_with(
+            provider="Chroma", request_model=None
+        )
+
+    def test_registered_in_invocation_manager(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={},
+            query="q",
+            run_id=run_id,
+        )
+
+        assert run_id in handler._invocation_manager._invocations
+        assert (
+            handler._invocation_manager.get_invocation(run_id) is retrieval_inv
+        )
+
+
+class TestOnRetrieverEnd:
+    def test_invocation_stopped(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={}, query="q", run_id=run_id
+        )
+        handler.on_retriever_end(documents=[], run_id=run_id)
+
+        retrieval_inv.stop.assert_called_once()
+
+    def test_documents_set_from_page_content(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        docs = [
+            Document(page_content="doc one", metadata={"source": "s1"}),
+            Document(page_content="doc two", metadata={}),
+        ]
+
+        handler.on_retriever_start(
+            serialized={}, query="q", run_id=run_id
+        )
+        handler.on_retriever_end(documents=docs, run_id=run_id)
+
+        assigned = retrieval_inv.documents
+        assert len(assigned) == 2
+        assert assigned[0]["content"] == "doc one"
+        assert assigned[0]["source"] == "s1"
+        assert assigned[1]["content"] == "doc two"
+
+    def test_document_id_included_when_present(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        doc = Document(page_content="text", id="doc-123", metadata={})
+
+        handler.on_retriever_start(
+            serialized={}, query="q", run_id=run_id
+        )
+        handler.on_retriever_end(documents=[doc], run_id=run_id)
+
+        assert retrieval_inv.documents[0]["id"] == "doc-123"
+
+    def test_document_id_absent_when_none(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        doc = Document(page_content="text", metadata={})
+
+        handler.on_retriever_start(
+            serialized={}, query="q", run_id=run_id
+        )
+        handler.on_retriever_end(documents=[doc], run_id=run_id)
+
+        assert "id" not in retrieval_inv.documents[0]
+
+    def test_state_cleaned_up_after_end(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={}, query="q", run_id=run_id
+        )
+        retrieval_inv.span.is_recording.return_value = False
+        handler.on_retriever_end(documents=[], run_id=run_id)
+
+        assert run_id not in handler._invocation_manager._invocations
+
+    def test_unknown_run_id_does_not_raise(self):
+        handler, _, _ = _make_handler_with_retrieval()
+        handler.on_retriever_end(documents=[], run_id=_run_id())
+
+
+class TestOnRetrieverError:
+    def test_invocation_failed(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={}, query="q", run_id=run_id
+        )
+        err = RuntimeError("retrieval failed")
+        handler.on_retriever_error(error=err, run_id=run_id)
+
+        retrieval_inv.fail.assert_called_once_with(err)
+
+    def test_state_cleaned_up_after_error(self):
+        handler, _, retrieval_inv = _make_handler_with_retrieval()
+        run_id = _run_id()
+
+        handler.on_retriever_start(
+            serialized={}, query="q", run_id=run_id
+        )
+        retrieval_inv.span.is_recording.return_value = False
+        handler.on_retriever_error(
+            error=RuntimeError("boom"), run_id=run_id
+        )
+
+        assert run_id not in handler._invocation_manager._invocations
+
+    def test_unknown_run_id_does_not_raise(self):
+        handler, _, _ = _make_handler_with_retrieval()
+        handler.on_retriever_error(
+            error=RuntimeError("boom"), run_id=_run_id()
+        )
