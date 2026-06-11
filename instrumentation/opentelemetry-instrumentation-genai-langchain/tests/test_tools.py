@@ -126,8 +126,7 @@ def test_prepare_tool_definitions_dict_tools():
 def test_prepare_tool_definitions_skips_non_function_type():
     tools = [{"type": "retrieval", "retrieval": {}}]
     result = prepare_tool_definitions(tools)
-    # No function-type tools → empty list returned (not None, but falsy)
-    assert not result
+    assert result is None
 
 
 def test_prepare_tool_definitions_multiple_tools():
@@ -329,6 +328,7 @@ def test_on_tool_start_with_no_serialized(monkeypatch):
     monkeypatch.setenv(
         "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
     )
+    _enable_experimental_mode()
     tracer_provider, span_exporter, logger_provider, meter_provider = (
         _make_providers()
     )
@@ -357,6 +357,7 @@ def test_on_tool_error_records_error_type(monkeypatch):
     monkeypatch.setenv(
         "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
     )
+    _enable_experimental_mode()
     tracer_provider, span_exporter, logger_provider, meter_provider = (
         _make_providers()
     )
@@ -546,6 +547,7 @@ def test_tool_span_created_via_instrumentor(monkeypatch):
     monkeypatch.setenv(
         "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
     )
+    _enable_experimental_mode()
 
     span_exporter = InMemorySpanExporter()
     tracer_provider = TracerProvider()

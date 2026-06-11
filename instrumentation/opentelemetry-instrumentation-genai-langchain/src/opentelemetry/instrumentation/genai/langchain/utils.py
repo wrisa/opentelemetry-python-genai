@@ -43,7 +43,7 @@ def prepare_tool_definitions(tools: list[Any]) -> list[ToolDefinition] | None:
                         parameters=_get_property_value(func, "parameters"),
                     )
                 )
-    return definitions
+    return definitions or None
 
 
 def make_input_message(data: Any) -> list[InputMessage]:

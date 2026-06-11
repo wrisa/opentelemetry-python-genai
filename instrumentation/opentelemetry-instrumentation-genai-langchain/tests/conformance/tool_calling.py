@@ -25,6 +25,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.test.weaver_live_check import LiveCheckReport
 from opentelemetry.test_util_genai.conformance import Scenario
 from opentelemetry.test_util_genai.instrumentor import instrument
+from opentelemetry.util.genai.handler import TelemetryHandler
 
 DEFAULT_MODEL = "gpt-4o-mini"
 WEATHER_TOOL_PROMPT = [
@@ -67,7 +68,7 @@ def _execute_weather_tool(arguments: str) -> str:
 
 
 class ToolCallingScenario(Scenario):
-    expected_spans = ("chat",)
+    expected_spans = ("chat", "execute_tool")
     expected_metrics = (
         "gen_ai.client.operation.duration",
         "gen_ai.client.token.usage",
@@ -85,6 +86,11 @@ class ToolCallingScenario(Scenario):
             {}
             if os.getenv("OPENAI_API_KEY")
             else {"OPENAI_API_KEY": "test_openai_api_key"}
+        )
+        tool_handler = TelemetryHandler(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+            logger_provider=logger_provider,
         )
         with mock.patch.dict(os.environ, key_override):
             with instrument(
@@ -110,11 +116,18 @@ class ToolCallingScenario(Scenario):
                     messages.append(first_response)
 
                     for tool_call in first_response.tool_calls:
+                        with tool_handler.tool(
+                            tool_call["name"],
+                            tool_call_id=tool_call["id"],
+                            tool_type="function",
+                        ) as invocation:
+                            result = _execute_weather_tool(
+                                json.dumps(tool_call["args"])
+                            )
+                            invocation.tool_result = result
                         messages.append(
                             ToolMessage(
-                                content=_execute_weather_tool(
-                                    json.dumps(tool_call["args"])
-                                ),
+                                content=result,
                                 tool_call_id=tool_call["id"],
                             )
                         )
@@ -130,7 +143,12 @@ class ToolCallingScenario(Scenario):
             for attr in entry["span"]["attributes"]
             if attr["name"] == "gen_ai.operation.name"
         ]
-        assert operations == ["chat", "chat"], (
-            "Tool calling exercises two chat completions (initial request and "
-            f"follow-up with tool results); saw spans {operations}"
+        assert operations == [
+            "chat",
+            "execute_tool",
+            "execute_tool",
+            "chat",
+        ], (
+            "Tool calling exercises two chat completions with two execute_tool "
+            "spans in between (one per tool call); saw spans {operations}"
         )

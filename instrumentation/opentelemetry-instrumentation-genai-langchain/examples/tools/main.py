@@ -27,7 +27,7 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
     OTLPSpanExporter,
 )
-from opentelemetry.instrumentation.langchain import LangChainInstrumentor
+from opentelemetry.instrumentation.genai.langchain import LangChainInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
@@ -75,7 +75,8 @@ TOOLS_BY_NAME = {t.name: t for t in TOOLS}
 
 
 def main() -> None:
-    LangChainInstrumentor().instrument()
+    instrumentor = LangChainInstrumentor()
+    instrumentor.instrument()
 
     llm = ChatOpenAI(
         model="gpt-3.5-turbo",
@@ -109,7 +110,7 @@ def main() -> None:
 
     print("Final answer:", response.content)
 
-    LangChainInstrumentor().uninstrument()
+    instrumentor.uninstrument()
 
 
 if __name__ == "__main__":

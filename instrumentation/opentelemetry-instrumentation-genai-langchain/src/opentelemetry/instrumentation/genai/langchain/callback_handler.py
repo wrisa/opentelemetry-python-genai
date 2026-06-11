@@ -290,10 +290,8 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         llm_invocation.seed = seed
         llm_invocation.temperature = temperature
         llm_invocation.max_tokens = max_tokens
-        if "invocation_params" in kwargs:
-            tools = kwargs["invocation_params"].get("tools") or kwargs[
-                "invocation_params"
-            ].get("functions")
+        if params is not None:
+            tools = params.get("tools") or params.get("functions")
             if tools:
                 tool_definitions = prepare_tool_definitions(tools)
                 llm_invocation.tool_definitions = tool_definitions
@@ -354,7 +352,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
                             )
                             tool_calls.append(tool_call_request)
                         output_message = OutputMessage(
-                            role="assistant",
+                            role=chat_generation.message.type,
                             parts=cast(list[MessagePart], tool_calls),
                             finish_reason=finish_reason,
                         )
@@ -453,7 +451,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
             arguments = raw_arguments
         else:
             arguments = None
-        tool_invocation = self._telemetry_handler.start_tool(
+        tool_invocation = self._telemetry_handler.tool(
             name=name, tool_description=description, tool_type="function"
         )
         tool_invocation.arguments = arguments
