@@ -129,7 +129,7 @@ _inference_expected := {
 	"gen_ai.response.finish_reasons",
 	"gen_ai.usage.input_tokens",
 	"gen_ai.usage.output_tokens",
-	# "server.address", sometimes not available
+	"server.address"
 }
 
 # Embeddings.
@@ -142,7 +142,7 @@ _embeddings_expected := {
 	"gen_ai.embeddings.dimension.count",
 	"gen_ai.response.model",
 	"gen_ai.usage.input_tokens",
-	# "server.address", sometimes not available
+	"server.address"
 }
 
 # Tool execution.
@@ -174,7 +174,7 @@ _create_agent_expected := {
 # Retrieval. Only gen_ai.operation.name is unconditionally required.
 _retrieval_expected := {
 	"gen_ai.operation.name",
-	# "server.address", sometimes not available
+	"server.address",
 }
 
 # Per expected attribute, one violation if missing.
@@ -196,6 +196,62 @@ deny contains _span_finding(
 	expected := _expected_for_op[op]
 	some attr_name in expected
 	not _has_attr(input.sample.span, attr_name)
+}
+
+# ─── Unknown gen_ai.operation.name (violation) ──────────────────────────────
+#
+# Weaver's built-in `undefined_enum_variant` advice is `information`-level;
+# we raise unknown values on `gen_ai.operation.name` to a violation. Keep
+# `_known_operation_names` in sync with model/gen-ai/registry.yaml.
+
+_known_operation_names := {
+	"chat",
+	"generate_content",
+	"text_completion",
+	"embeddings",
+	"retrieval",
+	"create_agent",
+	"invoke_agent",
+	"execute_tool",
+	"invoke_workflow",
+	"plan",
+}
+
+deny contains _span_finding(
+	"genai_operation_name_unknown",
+	"violation",
+	input.sample.span,
+	{"operation": op},
+	sprintf(
+		"Span '%v' has gen_ai.operation.name='%v' which is not a documented enum value",
+		[input.sample.span.name, op],
+	),
+) if {
+	input.sample.span
+	op := _attr_value(input.sample.span, "gen_ai.operation.name")
+	not _known_operation_names[op]
+}
+
+# ─── Span status (violation) ────────────────────────────────────────────────
+#
+# Per the OpenTelemetry trace spec, instrumentation libraries MUST NOT set
+# span status to OK — that value is reserved for application code that has
+# explicitly verified the call succeeded. Instrumentations should leave
+# status UNSET on success and set ERROR on failure.
+# https://opentelemetry.io/docs/specs/otel/trace/api/#set-status
+
+deny contains _span_finding(
+	"genai_span_status_ok_set_by_instrumentation",
+	"violation",
+	input.sample.span,
+	{"status_code": input.sample.span.status.code},
+	sprintf(
+		"Span '%v' has status.code='ok'; instrumentations must leave status UNSET on success (OK is reserved for application code).",
+		[input.sample.span.name],
+	),
+) if {
+	input.sample.span
+	input.sample.span.status.code == "ok"
 }
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
