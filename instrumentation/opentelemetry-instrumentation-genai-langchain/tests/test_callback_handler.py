@@ -1152,9 +1152,7 @@ class TestOnRetrieverEnd:
         handler, _, retrieval_inv = _make_handler_with_retrieval()
         run_id = _run_id()
 
-        handler.on_retriever_start(
-            serialized={}, query="q", run_id=run_id
-        )
+        handler.on_retriever_start(serialized={}, query="q", run_id=run_id)
         handler.on_retriever_end(documents=[], run_id=run_id)
 
         retrieval_inv.stop.assert_called_once()
@@ -1168,9 +1166,7 @@ class TestOnRetrieverEnd:
             Document(page_content="doc two", metadata={}),
         ]
 
-        handler.on_retriever_start(
-            serialized={}, query="q", run_id=run_id
-        )
+        handler.on_retriever_start(serialized={}, query="q", run_id=run_id)
         handler.on_retriever_end(documents=docs, run_id=run_id)
 
         assigned = retrieval_inv.documents
@@ -1185,9 +1181,7 @@ class TestOnRetrieverEnd:
 
         doc = Document(page_content="text", id="doc-123", metadata={})
 
-        handler.on_retriever_start(
-            serialized={}, query="q", run_id=run_id
-        )
+        handler.on_retriever_start(serialized={}, query="q", run_id=run_id)
         handler.on_retriever_end(documents=[doc], run_id=run_id)
 
         assert retrieval_inv.documents[0]["id"] == "doc-123"
@@ -1198,9 +1192,7 @@ class TestOnRetrieverEnd:
 
         doc = Document(page_content="text", metadata={})
 
-        handler.on_retriever_start(
-            serialized={}, query="q", run_id=run_id
-        )
+        handler.on_retriever_start(serialized={}, query="q", run_id=run_id)
         handler.on_retriever_end(documents=[doc], run_id=run_id)
 
         assert "id" not in retrieval_inv.documents[0]
@@ -1209,9 +1201,7 @@ class TestOnRetrieverEnd:
         handler, _, retrieval_inv = _make_handler_with_retrieval()
         run_id = _run_id()
 
-        handler.on_retriever_start(
-            serialized={}, query="q", run_id=run_id
-        )
+        handler.on_retriever_start(serialized={}, query="q", run_id=run_id)
         retrieval_inv.span.is_recording.return_value = False
         handler.on_retriever_end(documents=[], run_id=run_id)
 
@@ -1227,9 +1217,7 @@ class TestOnRetrieverError:
         handler, _, retrieval_inv = _make_handler_with_retrieval()
         run_id = _run_id()
 
-        handler.on_retriever_start(
-            serialized={}, query="q", run_id=run_id
-        )
+        handler.on_retriever_start(serialized={}, query="q", run_id=run_id)
         err = RuntimeError("retrieval failed")
         handler.on_retriever_error(error=err, run_id=run_id)
 
@@ -1239,13 +1227,9 @@ class TestOnRetrieverError:
         handler, _, retrieval_inv = _make_handler_with_retrieval()
         run_id = _run_id()
 
-        handler.on_retriever_start(
-            serialized={}, query="q", run_id=run_id
-        )
+        handler.on_retriever_start(serialized={}, query="q", run_id=run_id)
         retrieval_inv.span.is_recording.return_value = False
-        handler.on_retriever_error(
-            error=RuntimeError("boom"), run_id=run_id
-        )
+        handler.on_retriever_error(error=RuntimeError("boom"), run_id=run_id)
 
         assert run_id not in handler._invocation_manager._invocations
 

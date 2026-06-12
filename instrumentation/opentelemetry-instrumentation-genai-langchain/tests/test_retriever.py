@@ -114,9 +114,7 @@ def test_retrieval_span_attributes(
         assert "Berlin is the capital of Germany." in docs_attr
         assert "wiki" in docs_attr
     else:
-        assert (
-            gen_ai_attributes.GEN_AI_RETRIEVAL_QUERY_TEXT not in attrs
-        )
+        assert gen_ai_attributes.GEN_AI_RETRIEVAL_QUERY_TEXT not in attrs
         assert gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS not in attrs
 
 
@@ -207,9 +205,7 @@ def test_retrieval_duration_metric_emitted(
     monkeypatch.setenv(
         "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
     )
-    retriever = _FakeRetriever(
-        documents=[Document(page_content="content")]
-    )
+    retriever = _FakeRetriever(documents=[Document(page_content="content")])
     retriever.invoke("q")
 
     spans = span_exporter.get_finished_spans()
@@ -233,9 +229,7 @@ def test_retrieval_duration_metric_emitted(
     assert dp[0].sum > 0
 
     metric_attrs = dp[0].attributes
-    assert (
-        metric_attrs[gen_ai_attributes.GEN_AI_OPERATION_NAME] == "retrieval"
-    )
+    assert metric_attrs[gen_ai_attributes.GEN_AI_OPERATION_NAME] == "retrieval"
     assert (
         metric_attrs[gen_ai_attributes.GEN_AI_PROVIDER_NAME]
         == "FakeVectorStore"
@@ -243,12 +237,8 @@ def test_retrieval_duration_metric_emitted(
 
     # Exemplar links back to the span
     assert len(dp[0].exemplars) == 1
-    assert (
-        dp[0].exemplars[0].span_id == span.get_span_context().span_id
-    )
-    assert (
-        dp[0].exemplars[0].trace_id == span.get_span_context().trace_id
-    )
+    assert dp[0].exemplars[0].span_id == span.get_span_context().span_id
+    assert dp[0].exemplars[0].trace_id == span.get_span_context().trace_id
 
 
 def test_retrieval_error_duration_metric_emitted(
@@ -280,9 +270,7 @@ def test_retrieval_error_duration_metric_emitted(
 
     metric_attrs = dp[0].attributes
     assert metric_attrs[error_attributes.ERROR_TYPE] == "RuntimeError"
-    assert (
-        metric_attrs[gen_ai_attributes.GEN_AI_OPERATION_NAME] == "retrieval"
-    )
+    assert metric_attrs[gen_ai_attributes.GEN_AI_OPERATION_NAME] == "retrieval"
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +292,9 @@ def test_document_id_in_span_content(
     retriever.invoke("q")
 
     spans = span_exporter.get_finished_spans()
-    docs_attr = spans[0].attributes[gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS]
+    docs_attr = spans[0].attributes[
+        gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS
+    ]
     assert "abc-123" in docs_attr
 
 
@@ -322,7 +312,9 @@ def test_document_without_id_in_span_content(
     retriever.invoke("q")
 
     spans = span_exporter.get_finished_spans()
-    docs_attr = spans[0].attributes[gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS]
+    docs_attr = spans[0].attributes[
+        gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS
+    ]
     assert "no id here" in docs_attr
     assert '"id"' not in docs_attr
 
@@ -346,7 +338,9 @@ def test_document_metadata_in_span_content(
     retriever.invoke("q")
 
     spans = span_exporter.get_finished_spans()
-    docs_attr = spans[0].attributes[gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS]
+    docs_attr = spans[0].attributes[
+        gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS
+    ]
     assert "wiki" in docs_attr
     assert "0.9" in docs_attr
 

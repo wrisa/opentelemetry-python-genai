@@ -436,7 +436,9 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         invocation = self._invocation_manager.get_invocation(run_id=run_id)
-        if invocation is None or not isinstance(invocation, RetrievalInvocation):
+        if invocation is None or not isinstance(
+            invocation, RetrievalInvocation
+        ):
             self._invocation_manager.delete_invocation_state(run_id)
             return
 
@@ -444,7 +446,11 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
             {
                 "content": doc.page_content,
                 **({"id": doc.id} if doc.id is not None else {}),
-                **{k: v for k, v in doc.metadata.items() if v is not None},
+                **{
+                    k: v
+                    for k, v in cast(dict[str, Any], doc.metadata).items()
+                    if v is not None
+                },
             }
             for doc in documents
         ]
@@ -461,7 +467,9 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         invocation = self._invocation_manager.get_invocation(run_id=run_id)
-        if invocation is None or not isinstance(invocation, RetrievalInvocation):
+        if invocation is None or not isinstance(
+            invocation, RetrievalInvocation
+        ):
             self._invocation_manager.delete_invocation_state(run_id)
             return
 
