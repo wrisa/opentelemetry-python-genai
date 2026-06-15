@@ -45,10 +45,16 @@ class AgentScenario(Scenario):
         "gen_ai.client.token.usage",
     )
     # langchain can't populate server.address on chat spans.
+    # invoke_agent provider is unknown at span creation; ls_provider is only
+    # available on the chat model callback, not the chain callback.
     expected_violations = (
         ExpectedViolation(
             advice_id="genai_expected_attribute_missing",
             message_substring="server.address",
+        ),
+        ExpectedViolation(
+            advice_id="required_attribute_not_present",
+            message_substring="gen_ai.provider.name",
         ),
     )
 
