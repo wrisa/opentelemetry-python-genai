@@ -24,6 +24,9 @@ from opentelemetry.instrumentation.genai.langchain.utils import (
     make_last_output_message,
     prepare_tool_definitions,
 )
+from opentelemetry.semconv._incubating.attributes import (
+    gen_ai_attributes as GenAI,
+)
 from opentelemetry.util.genai.handler import TelemetryHandler
 from opentelemetry.util.genai.invocation import (
     AgentInvocation,
@@ -249,6 +252,21 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
                 temperature = metadata.get("ls_temperature")
             if "ls_max_tokens" in metadata:
                 max_tokens = metadata.get("ls_max_tokens")
+
+        # Backfill provider on any ancestor invoke_agent span that was created
+        # before the provider was known (LangChain chain callbacks don't carry
+        # ls_provider; only the chat model callback does).
+        if provider != "unknown":
+            agent_invocation = self._find_nearest_agent(parent_run_id)
+            if (
+                agent_invocation is not None
+                and agent_invocation.provider == "unknown"
+                and agent_invocation.span.is_recording()
+            ):
+                agent_invocation.provider = provider
+                agent_invocation.span.set_attribute(
+                    GenAI.GEN_AI_PROVIDER_NAME, provider
+                )
 
         input_messages: list[InputMessage] = []
         for sub_messages in messages:
