@@ -443,14 +443,14 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
             name = serialized.get("name") or "unknown"
             description = serialized.get("description")
 
-        raw_arguments: Any = inputs if inputs is not None else input_str
-        arguments: str | None
-        if isinstance(raw_arguments, dict):
-            arguments = json.dumps(raw_arguments)
-        elif isinstance(raw_arguments, str):
-            arguments = raw_arguments
+        arguments: Any
+        if inputs is not None:
+            arguments = inputs
         else:
-            arguments = None
+            try:
+                arguments = json.loads(input_str)
+            except (json.JSONDecodeError, ValueError):
+                arguments = input_str
         tool_invocation = self._telemetry_handler.tool(
             name=name, tool_description=description, tool_type="function"
         )

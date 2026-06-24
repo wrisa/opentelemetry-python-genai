@@ -846,6 +846,42 @@ def test_on_tool_start_inputs_takes_priority_over_input_str(monkeypatch):
     )
 
 
+def test_on_tool_start_json_input_str_is_deserialized(monkeypatch):
+    """When inputs is None but input_str is valid JSON, it is deserialized to an object."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "lookup"},
+        input_str='{"city": "Berlin"}',
+        run_id=run_id,
+    )
+    output = MagicMock()
+    output.content = "result"
+    output.tool_call_id = None
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    # JSON-deserialized dict is re-serialized to JSON for the span attribute
+    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == json.dumps(
+        {"city": "Berlin"}
+    )
+
+
 # ---------------------------------------------------------------------------
 # on_chat_model_start: functions key as alternative to tools
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from opentelemetry._logs import Logger
@@ -16,7 +17,18 @@ from opentelemetry.util.genai.metrics import InvocationMetricsRecorder
 from opentelemetry.util.genai.utils import (
     should_capture_content_on_spans,
 )
-from opentelemetry.util.types import AttributeValue
+from opentelemetry.util.types import AnyValue, AttributeValue
+
+
+def _any_value_to_attribute_value(value: AnyValue) -> AttributeValue:
+    """Serialize an AnyValue to an AttributeValue for span attributes.
+
+    Span attributes only support scalar and homogeneous sequence types.
+    Mappings and sequences of mixed/complex types are serialized to JSON.
+    """
+    if isinstance(value, (bool, str, bytes, int, float)) or value is None:
+        return value  # type: ignore[return-value]
+    return json.dumps(value)
 
 
 class ToolInvocation(GenAIInvocation):
@@ -68,7 +80,7 @@ class ToolInvocation(GenAIInvocation):
         # it's recommended to check the content capture flag in the
         # instrumentation library before assigning these attributes
         # to the invocation.
-        self.arguments: AttributeValue | None = None
+        self.arguments: AnyValue | None = None
         self.tool_call_id = tool_call_id
         self.tool_type = tool_type
         self.tool_description = tool_description
@@ -104,8 +116,8 @@ class ToolInvocation(GenAIInvocation):
             (GenAI.GEN_AI_TOOL_DESCRIPTION, self.tool_description),
             (
                 GenAI.GEN_AI_TOOL_CALL_ARGUMENTS,
-                self.arguments
-                if self.should_capture_content_on_span
+                _any_value_to_attribute_value(self.arguments)
+                if self.should_capture_content_on_span and self.arguments is not None
                 else None,
             ),
             (
