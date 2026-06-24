@@ -116,7 +116,8 @@ class ToolInvocation(GenAIInvocation):
             (
                 GenAI.GEN_AI_TOOL_CALL_ARGUMENTS,
                 _any_value_to_attribute_value(self.arguments)
-                if self.should_capture_content_on_span and self.arguments is not None
+                if self.should_capture_content_on_span
+                and self.arguments is not None
                 else None,
             ),
             (
