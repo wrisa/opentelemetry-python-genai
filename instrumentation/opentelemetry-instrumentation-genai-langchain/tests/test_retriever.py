@@ -17,6 +17,7 @@ import pytest
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
+from pydantic import Field
 
 from opentelemetry.semconv._incubating.attributes import gen_ai_attributes
 from opentelemetry.semconv._incubating.metrics import gen_ai_metrics
@@ -30,7 +31,7 @@ from opentelemetry.semconv.attributes import error_attributes
 class _FakeRetriever(BaseRetriever):
     """In-memory retriever — no network calls, no embeddings."""
 
-    documents: list[Document] = []
+    documents: list[Document] = Field(default_factory=list)
 
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
@@ -316,10 +317,9 @@ def test_document_without_id_in_span_content(
         gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS
     ]
     assert "no id here" in docs_attr
-    assert '"id"' not in docs_attr
 
 
-def test_document_metadata_in_span_content(
+def test_document_metadata_not_in_span_content(
     span_exporter, start_instrumentation, monkeypatch
 ):
     monkeypatch.setenv(
@@ -341,8 +341,9 @@ def test_document_metadata_in_span_content(
     docs_attr = spans[0].attributes[
         gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS
     ]
-    assert "wiki" in docs_attr
-    assert "0.9" in docs_attr
+    assert "text" in docs_attr
+    assert "wiki" not in docs_attr
+    assert "0.9" not in docs_attr
 
 
 def test_empty_documents_in_span_content(

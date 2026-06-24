@@ -1171,7 +1171,7 @@ class TestOnRetrieverEnd:
         assigned = retrieval_inv.documents
         assert len(assigned) == 2
         assert assigned[0]["content"] == "doc one"
-        assert assigned[0]["source"] == "s1"
+        assert "source" not in assigned[0]
         assert assigned[1]["content"] == "doc two"
 
     def test_document_id_included_when_present(self):
@@ -1185,7 +1185,7 @@ class TestOnRetrieverEnd:
 
         assert retrieval_inv.documents[0]["id"] == "doc-123"
 
-    def test_document_id_absent_when_none(self):
+    def test_document_id_none_when_absent(self):
         handler, _, retrieval_inv = _make_handler_with_retrieval()
         run_id = _run_id()
 
@@ -1194,7 +1194,7 @@ class TestOnRetrieverEnd:
         handler.on_retriever_start(serialized={}, query="q", run_id=run_id)
         handler.on_retriever_end(documents=[doc], run_id=run_id)
 
-        assert "id" not in retrieval_inv.documents[0]
+        assert retrieval_inv.documents[0]["id"] is None
 
     def test_state_cleaned_up_after_end(self):
         handler, _, retrieval_inv = _make_handler_with_retrieval()

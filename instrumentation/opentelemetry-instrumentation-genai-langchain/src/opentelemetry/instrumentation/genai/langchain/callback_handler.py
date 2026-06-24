@@ -442,12 +442,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
         invocation.documents = [
             {
                 "content": doc.page_content,
-                **({"id": doc.id} if doc.id is not None else {}),
-                **{
-                    k: v
-                    for k, v in cast(dict[str, Any], doc.metadata).items()
-                    if v is not None
-                },
+                "id": doc.id,
             }
             for doc in documents
         ]
