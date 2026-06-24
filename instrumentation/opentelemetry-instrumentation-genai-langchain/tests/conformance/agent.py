@@ -52,10 +52,6 @@ class AgentScenario(Scenario):
             advice_id="genai_expected_attribute_missing",
             message_substring="server.address",
         ),
-        ExpectedViolation(
-            advice_id="required_attribute_not_present",
-            message_substring="gen_ai.provider.name",
-        ),
     )
 
     def run(

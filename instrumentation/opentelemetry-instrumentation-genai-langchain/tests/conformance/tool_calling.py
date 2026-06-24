@@ -77,15 +77,10 @@ class ToolCallingScenario(Scenario):
         "gen_ai.client.token.usage",
     )
     # langchain can't populate server.address on chat spans.
-    # execute_tool spans are provider-agnostic; gen_ai.provider.name is not available.
     expected_violations = (
         ExpectedViolation(
             advice_id="genai_expected_attribute_missing",
             message_substring="server.address",
-        ),
-        ExpectedViolation(
-            advice_id="required_attribute_not_present",
-            message_substring="gen_ai.provider.name",
         ),
     )
 
