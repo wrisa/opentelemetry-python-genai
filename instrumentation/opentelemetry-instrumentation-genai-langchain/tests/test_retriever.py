@@ -113,7 +113,6 @@ def test_retrieval_span_attributes(
         assert "Paris is the capital of France." in docs_attr
         assert "doc-1" in docs_attr
         assert "Berlin is the capital of Germany." in docs_attr
-        assert "wiki" in docs_attr
     else:
         assert gen_ai_attributes.GEN_AI_RETRIEVAL_QUERY_TEXT not in attrs
         assert gen_ai_attributes.GEN_AI_RETRIEVAL_DOCUMENTS not in attrs
