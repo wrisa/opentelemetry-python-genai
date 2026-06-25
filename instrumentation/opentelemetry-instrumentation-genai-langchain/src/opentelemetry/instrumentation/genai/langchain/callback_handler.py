@@ -339,7 +339,7 @@ class OpenTelemetryLangChainCallbackHandler(BaseCallbackHandler):
                             )
                         )
 
-                    if finish_reason == "tool_calls":
+                    if finish_reason in ("tool_calls", "tool_use"):
                         tool_calls: list[ToolCallRequest] = []
                         for tool_call in chat_generation.message.tool_calls:
                             tool_call_request = ToolCallRequest(

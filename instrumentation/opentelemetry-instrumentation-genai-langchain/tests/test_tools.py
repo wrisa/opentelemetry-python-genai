@@ -537,6 +537,71 @@ def test_on_llm_end_with_multiple_tool_calls(monkeypatch):
     assert "add" in output_messages
 
 
+_BEDROCK_SERIALIZED: dict[str, Any] = {"name": "ChatBedrock"}
+_BEDROCK_INVOCATION_PARAMS: dict[str, Any] = {
+    "model_id": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+}
+_BEDROCK_METADATA: dict[str, Any] = {
+    "ls_provider": "amazon_bedrock",
+    "ls_model_type": "chat",
+    "model_id": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+}
+
+
+def test_on_llm_end_with_bedrock_tool_use_records_tool_call_requests(
+    monkeypatch,
+):
+    """When finish_reason is 'tool_use' (Bedrock/Anthropic stopReason) the
+    output message parts must be ToolCallRequests, same as for OpenAI's
+    'tool_calls' finish reason."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_chat_model_start(
+        serialized=_BEDROCK_SERIALIZED,
+        messages=[[HumanMessage(content="What is 3 * 4?")]],
+        run_id=run_id,
+        metadata=_BEDROCK_METADATA,
+        invocation_params=_BEDROCK_INVOCATION_PARAMS,
+    )
+
+    # Bedrock path: generation_info is None; stopReason lives in response_metadata
+    tool_call = {
+        "name": "multiply",
+        "id": "tooluse_001",
+        "args": {"a": 3, "b": 4},
+    }
+    ai_msg = AIMessage(content="")
+    ai_msg.tool_calls = [tool_call]  # type: ignore[attr-defined]
+    ai_msg.response_metadata = {"stopReason": "tool_use"}
+    ai_msg.usage_metadata = None  # type: ignore[assignment]
+    gen = ChatGeneration(message=ai_msg, text="")
+    gen.generation_info = None
+    result = LLMResult(generations=[[gen]])
+
+    handler.on_llm_end(response=result, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    assert gen_ai_attributes.GEN_AI_OUTPUT_MESSAGES in attrs
+    output_messages = attrs[gen_ai_attributes.GEN_AI_OUTPUT_MESSAGES]
+    assert "multiply" in output_messages
+    assert "tool_use" in output_messages
+
+
 # ---------------------------------------------------------------------------
 # Full LangChain tool invocation via instrumentor (no network)
 # ---------------------------------------------------------------------------

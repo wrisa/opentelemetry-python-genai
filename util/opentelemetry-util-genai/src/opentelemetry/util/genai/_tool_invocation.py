@@ -19,15 +19,16 @@ from opentelemetry.util.genai.utils import (
 from opentelemetry.util.types import AnyValue, AttributeValue
 
 
-def _any_value_to_attribute_value(value: AnyValue) -> AttributeValue:
-    """Serialize an AnyValue to an AttributeValue for span attributes.
-
-    Span attributes only support scalar and homogeneous sequence types.
-    Mappings and sequences of mixed/complex types are serialized to JSON.
-    """
-    if isinstance(value, (bool, str, bytes, int, float)) or value is None:
-        return value  # type: ignore[return-value]
-    return json.dumps(value)
+def _any_value_to_attribute_value(value: AnyValue) -> AttributeValue | None:
+    """Serialize an AnyValue to an AttributeValue for OTel span attributes."""
+    if value is None:
+        return None
+    if isinstance(value, (bool, str, bytes, int, float)):
+        return value
+    try:
+        return json.dumps(value, default=str)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 class ToolInvocation(GenAIInvocation):
