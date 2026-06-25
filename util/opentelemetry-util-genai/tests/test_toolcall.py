@@ -3,7 +3,6 @@
 
 """Tests for ToolCallRequest and ToolInvocation inheritance structure"""
 
-import json
 import os
 from unittest.mock import patch
 
@@ -29,6 +28,7 @@ from opentelemetry.util.genai.types import (
     ServerToolCallResponse,
     ToolCallRequest,
 )
+from opentelemetry.util.genai.utils import gen_ai_json_dumps
 
 
 def _make_handler() -> TelemetryHandler:
@@ -212,8 +212,8 @@ def test_arguments_dict_serialized_to_json():
 
     attrs = span_exporter.get_finished_spans()[0].attributes
     assert GenAI.GEN_AI_TOOL_CALL_ARGUMENTS in attrs
-    assert attrs[GenAI.GEN_AI_TOOL_CALL_ARGUMENTS] == json.dumps(
-        {"location": "Paris", "unit": "celsius"}, default=str
+    assert attrs[GenAI.GEN_AI_TOOL_CALL_ARGUMENTS] == gen_ai_json_dumps(
+        {"location": "Paris", "unit": "celsius"}
     )
 
 

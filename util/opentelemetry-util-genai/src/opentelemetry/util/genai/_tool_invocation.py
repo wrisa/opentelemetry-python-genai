@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import json
-
 from opentelemetry._logs import Logger
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
@@ -14,6 +12,7 @@ from opentelemetry.util.genai._invocation import Error, GenAIInvocation
 from opentelemetry.util.genai.completion_hook import CompletionHook
 from opentelemetry.util.genai.metrics import InvocationMetricsRecorder
 from opentelemetry.util.genai.utils import (
+    gen_ai_json_dumps,
     should_capture_content_on_spans,
 )
 from opentelemetry.util.types import AnyValue, AttributeValue
@@ -26,7 +25,7 @@ def _any_value_to_attribute_value(value: AnyValue) -> AttributeValue | None:
     if isinstance(value, (bool, str, bytes, int, float)):
         return value
     try:
-        return json.dumps(value, default=str)
+        return gen_ai_json_dumps(value)
     except (TypeError, ValueError):
         return str(value)
 
