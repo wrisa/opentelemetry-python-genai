@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -283,8 +282,8 @@ def test_on_tool_start_and_end_creates_span(monkeypatch):
         attrs[gen_ai_attributes.GEN_AI_TOOL_DESCRIPTION]
         == "Multiply two numbers"
     )
-    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == json.dumps(
-        {"a": 3, "b": 4}
+    assert (
+        attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == '{"a":3,"b":4}'
     )
 
 
@@ -906,8 +905,9 @@ def test_on_tool_start_inputs_takes_priority_over_input_str(monkeypatch):
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 1
     attrs = spans[0].attributes
-    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == json.dumps(
-        {"x": 1, "y": 2}
+    assert (
+        attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS]
+        == '{"x":1,"y":2}'
     )
 
 
@@ -942,8 +942,9 @@ def test_on_tool_start_json_input_str_is_deserialized(monkeypatch):
     assert len(spans) == 1
     attrs = spans[0].attributes
     # JSON-deserialized dict is re-serialized to JSON for the span attribute
-    assert attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == json.dumps(
-        {"city": "Berlin"}
+    assert (
+        attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS]
+        == '{"city":"Berlin"}'
     )
 
 
