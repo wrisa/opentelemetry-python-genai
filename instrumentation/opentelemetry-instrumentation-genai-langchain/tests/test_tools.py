@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -833,7 +834,6 @@ def test_on_tool_start_with_complex_inputs_serializes_to_json(monkeypatch):
     attrs = spans[0].attributes
     arguments = attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS]
     assert isinstance(arguments, str)
-    import json
 
     parsed = json.loads(arguments)
     assert parsed["query"] == "Paris weather"
@@ -874,7 +874,6 @@ def test_on_tool_end_with_complex_result_serializes_to_json(monkeypatch):
     attrs = spans[0].attributes
     result = attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_RESULT]
     assert isinstance(result, str)
-    import json
 
     parsed = json.loads(result)
     assert parsed["status"] == "ok"
@@ -915,7 +914,6 @@ def test_on_tool_end_with_list_result_serializes_to_json(monkeypatch):
     attrs = spans[0].attributes
     result = attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_RESULT]
     assert isinstance(result, str)
-    import json
 
     parsed = json.loads(result)
     assert parsed == ["apple", "banana", "cherry"]
