@@ -793,6 +793,135 @@ def test_on_tool_end_with_none_tool_call_id_omits_attribute(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Complex argument and result values — AnyValue / JSON serialization
+# ---------------------------------------------------------------------------
+
+
+def test_on_tool_start_with_complex_inputs_serializes_to_json(monkeypatch):
+    """Complex dict inputs are serialized to a compact JSON string on the span."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "search"},
+        input_str="",
+        run_id=run_id,
+        inputs={
+            "query": "Paris weather",
+            "filters": {"lang": "en", "limit": 5},
+        },
+    )
+    output = MagicMock()
+    output.content = "Sunny"
+    output.tool_call_id = None
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    arguments = attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS]
+    assert isinstance(arguments, str)
+    import json
+
+    parsed = json.loads(arguments)
+    assert parsed["query"] == "Paris weather"
+    assert parsed["filters"] == {"lang": "en", "limit": 5}
+
+
+def test_on_tool_end_with_complex_result_serializes_to_json(monkeypatch):
+    """Complex dict/list tool results are serialized to a JSON string on the span."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "get_data"},
+        input_str="",
+        run_id=run_id,
+        inputs={"id": 42},
+    )
+    # Simulate a tool returning a complex structured result
+    output = MagicMock()
+    output.content = {"status": "ok", "items": [1, 2, 3], "meta": {"count": 3}}
+    output.tool_call_id = "call_complex"
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    result = attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_RESULT]
+    assert isinstance(result, str)
+    import json
+
+    parsed = json.loads(result)
+    assert parsed["status"] == "ok"
+    assert parsed["items"] == [1, 2, 3]
+    assert parsed["meta"]["count"] == 3
+
+
+def test_on_tool_end_with_list_result_serializes_to_json(monkeypatch):
+    """List tool results are serialized to a JSON string on the span."""
+    monkeypatch.setenv(
+        "OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental"
+    )
+    monkeypatch.setenv(
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "SPAN_ONLY"
+    )
+    _enable_experimental_mode()
+    tracer_provider, span_exporter, logger_provider, meter_provider = (
+        _make_providers()
+    )
+    handler = _make_callback_handler(
+        tracer_provider, logger_provider, meter_provider
+    )
+
+    run_id = uuid4()
+    handler.on_tool_start(
+        serialized={"name": "list_items"},
+        input_str="",
+        run_id=run_id,
+        inputs={"category": "fruits"},
+    )
+    output = MagicMock()
+    output.content = ["apple", "banana", "cherry"]
+    output.tool_call_id = None
+    handler.on_tool_end(output=output, run_id=run_id)
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    attrs = spans[0].attributes
+    result = attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_RESULT]
+    assert isinstance(result, str)
+    import json
+
+    parsed = json.loads(result)
+    assert parsed == ["apple", "banana", "cherry"]
+
+
+# ---------------------------------------------------------------------------
 # on_tool_end / on_tool_error with unknown run_id — must not raise
 # ---------------------------------------------------------------------------
 
@@ -906,8 +1035,7 @@ def test_on_tool_start_inputs_takes_priority_over_input_str(monkeypatch):
     assert len(spans) == 1
     attrs = spans[0].attributes
     assert (
-        attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS]
-        == '{"x":1,"y":2}'
+        attrs[gen_ai_attributes.GEN_AI_TOOL_CALL_ARGUMENTS] == '{"x":1,"y":2}'
     )
 
 

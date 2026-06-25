@@ -74,7 +74,7 @@ class ToolInvocation(GenAIInvocation):
         )
         self.should_capture_content_on_span = should_capture_content_on_spans()
         self.name = name
-        self.tool_result: AttributeValue | None = None
+        self.tool_result: AnyValue | None = None
         # Since arguments and tool_result can be expensive to serialize,
         # it's recommended to check the content capture flag in the
         # instrumentation library before assigning these attributes
@@ -122,8 +122,9 @@ class ToolInvocation(GenAIInvocation):
             ),
             (
                 GenAI.GEN_AI_TOOL_CALL_RESULT,
-                self.tool_result
+                _any_value_to_attribute_value(self.tool_result)
                 if self.should_capture_content_on_span
+                and self.tool_result is not None
                 else None,
             ),
         )
