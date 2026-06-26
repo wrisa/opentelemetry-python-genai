@@ -26,8 +26,8 @@ from opentelemetry.instrumentation.genai.langchain.utils import (
 )
 from opentelemetry.util.genai.invocation import (
     AgentInvocation,
-    RetrievalInvocation,
     InferenceInvocation,
+    RetrievalInvocation,
     WorkflowInvocation,
 )
 from opentelemetry.util.genai.types import (
@@ -1041,6 +1041,7 @@ class TestOutputMessagesOnInvocations:
         assert len(assigned) == 1
         assert assigned[0].parts[0].content == "the answer is 7"
 
+
 # ---------------------------------------------------------------------------
 # on_llm_end – tool call finish reasons
 # ---------------------------------------------------------------------------
@@ -1332,4 +1333,4 @@ class TestOnRetrieverError:
         handler, _, _ = _make_handler_with_retrieval()
         handler.on_retriever_error(
             error=RuntimeError("boom"), run_id=_run_id()
-        ) 
+        )
