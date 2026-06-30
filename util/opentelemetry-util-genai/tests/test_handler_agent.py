@@ -544,6 +544,67 @@ class TestRemoteAgentInvocation(unittest.TestCase):
         assert captured_attributes[server_attributes.SERVER_PORT] == 8080
 
 
+class TestAgentConversationRoot(unittest.TestCase):
+    def setUp(self):
+        self.span_exporter = InMemorySpanExporter()
+        tracer_provider = TracerProvider()
+        tracer_provider.add_span_processor(
+            SimpleSpanProcessor(self.span_exporter)
+        )
+        self.handler = TelemetryHandler(tracer_provider=tracer_provider)
+
+    def test_root_agent_gets_conversation_root_true(self):
+        """Agent with no active parent span is auto-marked as conversation root."""
+        invocation = self.handler.invoke_local_agent("openai", agent_name="Root Agent")
+        self.assertTrue(invocation.conversation_root)
+        invocation.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        self.assertEqual(spans[0].attributes.get("gen_ai.conversation_root"), True)
+
+    def test_child_agent_does_not_get_conversation_root(self):
+        """Agent created inside an active parent span is NOT marked as root."""
+        with self.handler.invoke_local_agent("openai", agent_name="Parent Agent") as _parent:
+            child = self.handler.invoke_local_agent("openai", agent_name="Child Agent")
+            self.assertIsNone(child.conversation_root)
+            child.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        child_span = next(s for s in spans if s.name == "invoke_agent Child Agent")
+        self.assertNotIn("gen_ai.conversation_root", child_span.attributes)
+
+    def test_explicit_conversation_root_false_is_respected(self):
+        """Explicitly setting conversation_root=False is not overridden."""
+        invocation = self.handler.invoke_local_agent("openai")
+        invocation.conversation_root = False
+        invocation.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        self.assertEqual(spans[0].attributes.get("gen_ai.conversation_root"), False)
+
+    def test_conversation_root_not_emitted_when_none(self):
+        """When conversation_root is None (child), attribute is not emitted."""
+        with self.handler.invoke_local_agent("openai", agent_name="Parent") as _parent:
+            child = self.handler.invoke_local_agent("openai", agent_name="Child")
+            self.assertIsNone(child.conversation_root)
+            child.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        child_span = next(s for s in spans if s.name == "invoke_agent Child")
+        self.assertNotIn("gen_ai.conversation_root", child_span.attributes)
+
+    def test_remote_root_agent_gets_conversation_root_true(self):
+        """Remote agent with no active parent span is auto-marked as conversation root."""
+        invocation = self.handler.invoke_remote_agent(
+            "openai", agent_name="Remote Root"
+        )
+        self.assertTrue(invocation.conversation_root)
+        invocation.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        self.assertEqual(spans[0].attributes.get("gen_ai.conversation_root"), True)
+
+
 class TestAgentInvocationMetrics(TestBase):
     def test_local_agent_records_duration_and_tokens(self) -> None:
         handler = TelemetryHandler(
