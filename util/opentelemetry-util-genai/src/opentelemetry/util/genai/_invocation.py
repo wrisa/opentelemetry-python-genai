@@ -18,14 +18,7 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.semconv.attributes import error_attributes
 from opentelemetry.trace import INVALID_SPAN as _INVALID_SPAN
-from opentelemetry.trace import (
-    NonRecordingSpan,
-    Span,
-    SpanKind,
-    Tracer,
-    get_current_span,
-    set_span_in_context,
-)
+from opentelemetry.trace import Span, SpanKind, Tracer, set_span_in_context
 from opentelemetry.trace.status import Status, StatusCode
 from opentelemetry.util.genai.completion_hook import CompletionHook
 from opentelemetry.util.genai.types import (
@@ -46,16 +39,6 @@ if TYPE_CHECKING:
 
 
 ContextToken: TypeAlias = Token[Context]
-
-
-def _has_active_span() -> bool:
-    """Return True if there is an active recording span in the current context.
-
-    Used by WorkflowInvocation and AgentInvocation to auto-detect whether they
-    are the root of a conversation (no active parent span).
-    """
-    current = get_current_span()
-    return not isinstance(current, NonRecordingSpan) and current.is_recording()
 
 
 class GenAIInvocation(AbstractContextManager["GenAIInvocation"]):
@@ -100,10 +83,6 @@ class GenAIInvocation(AbstractContextManager["GenAIInvocation"]):
         self._span_kind: SpanKind = span_kind
         self._context_token: ContextToken | None = None
         self._monotonic_start_s: float | None = None
-        self.conversation_root: bool | None = None
-        """When True, marks this span as the root of a conversation (no GenAI parent).
-        Auto-set by WorkflowInvocation and AgentInvocation when no active span exists
-        at construction time. Can be explicitly set by callers to override."""
 
     def _start(self, attributes: dict[str, Any] | None = None) -> None:
         """Start the invocation span and attach it to the current context.
@@ -168,10 +147,6 @@ class GenAIInvocation(AbstractContextManager["GenAIInvocation"]):
             return
         try:
             self._apply_finish(error)
-            if self.conversation_root is not None:
-                self.span.set_attribute(
-                    "gen_ai.conversation_root", self.conversation_root
-                )
         finally:
             try:
                 detach(self._context_token)

@@ -14,7 +14,6 @@ from opentelemetry.trace import SpanKind, Tracer
 from opentelemetry.util.genai._invocation import (
     Error,
     GenAIInvocation,
-    _has_active_span,
     get_content_attributes,
 )
 from opentelemetry.util.genai.completion_hook import CompletionHook
@@ -89,11 +88,6 @@ class AgentInvocation(GenAIInvocation):
         self.choice_count: int | None = None
 
         self.finish_reasons: list[str] | None = None
-
-        # Auto-mark as conversation root when no active span exists at creation time.
-        # Can be overridden by the caller after construction.
-        if not _has_active_span():
-            self.conversation_root = True
 
         self.input_tokens: int | None = None
         self.output_tokens: int | None = None

@@ -11,11 +11,7 @@ from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
 )
 from opentelemetry.trace import SpanKind, Tracer
-from opentelemetry.util.genai._invocation import (
-    Error,
-    GenAIInvocation,
-    _has_active_span,
-)
+from opentelemetry.util.genai._invocation import Error, GenAIInvocation
 from opentelemetry.util.genai.completion_hook import CompletionHook
 from opentelemetry.util.genai.metrics import InvocationMetricsRecorder
 from opentelemetry.util.genai.types import (
@@ -59,10 +55,6 @@ class WorkflowInvocation(GenAIInvocation):
         self.name = name
         self.input_messages: list[InputMessage] = []
         self.output_messages: list[OutputMessage] = []
-        # Auto-mark as conversation root when no active span exists at creation time.
-        # Can be overridden by the caller after construction.
-        if not _has_active_span():
-            self.conversation_root = True
         self._start(self._get_base_attributes())
 
     def _get_base_attributes(self) -> dict[str, Any]:
