@@ -12,6 +12,10 @@ from opentelemetry.semconv._incubating.attributes import (
 )
 from opentelemetry.trace import SpanKind, Tracer
 from opentelemetry.util.genai._invocation import Error, GenAIInvocation
+from opentelemetry.util.genai.context_attributes import (
+    get_context_scoped_attributes,
+    set_context_scoped_attributes,
+)
 from opentelemetry.util.genai.completion_hook import CompletionHook
 from opentelemetry.util.genai.metrics import InvocationMetricsRecorder
 from opentelemetry.util.genai.types import (
@@ -55,7 +59,23 @@ class WorkflowInvocation(GenAIInvocation):
         self.name = name
         self.input_messages: list[InputMessage] = []
         self.output_messages: list[OutputMessage] = []
-        self._start(self._get_base_attributes())
+
+        # Use the context-scoped attribute key to determine whether a GenAI
+        # root already exists in the current context. This correctly ignores
+        # non-GenAI parents (HTTP, gRPC, etc.) — unlike checking OTel span
+        # parentage directly.
+        csa = get_context_scoped_attributes()
+        if "gen_ai.conversation_root" not in csa:
+            # No enclosing GenAI root — this invocation is the root.
+            self.conversation_root = True
+
+        # Propagate the marker to child spans via context-scoped attributes,
+        # so any nested WorkflowInvocation or AgentInvocation sees it and
+        # does NOT mark itself as root.
+        extra_ctx = set_context_scoped_attributes(
+            {"gen_ai.conversation_root": True}
+        )
+        self._start(self._get_base_attributes(), extra_context=extra_ctx)
 
     def _get_base_attributes(self) -> dict[str, Any]:
         """Return sampling-relevant attributes available at span creation time."""

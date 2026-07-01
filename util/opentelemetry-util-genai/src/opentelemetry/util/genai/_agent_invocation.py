@@ -16,6 +16,10 @@ from opentelemetry.util.genai._invocation import (
     GenAIInvocation,
     get_content_attributes,
 )
+from opentelemetry.util.genai.context_attributes import (
+    get_context_scoped_attributes,
+    set_context_scoped_attributes,
+)
 from opentelemetry.util.genai.completion_hook import CompletionHook
 from opentelemetry.util.genai.metrics import InvocationMetricsRecorder
 from opentelemetry.util.genai.types import (
@@ -89,6 +93,20 @@ class AgentInvocation(GenAIInvocation):
 
         self.finish_reasons: list[str] | None = None
 
+        # Use the context-scoped attribute key to determine whether a GenAI
+        # root already exists in the current context. This correctly ignores
+        # non-GenAI parents (HTTP, gRPC, etc.) — unlike checking OTel span
+        # parentage directly.
+        csa = get_context_scoped_attributes()
+        if "gen_ai.conversation_root" not in csa:
+            self.conversation_root = True
+
+        # Propagate the marker so nested invocations do NOT mark themselves root.
+        extra_ctx = set_context_scoped_attributes(
+            {"gen_ai.conversation_root": True}
+        )
+        self._start_extra_ctx = extra_ctx
+
         self.input_tokens: int | None = None
         self.output_tokens: int | None = None
         self.cache_creation_input_tokens: int | None = None
@@ -99,7 +117,10 @@ class AgentInvocation(GenAIInvocation):
         self.system_instruction: list[MessagePart] = []
         self.tool_definitions: list[ToolDefinition] | None = None
 
-        self._start(self._get_base_attributes())
+        self._start(
+            self._get_base_attributes(),
+            extra_context=self._start_extra_ctx,
+        )
 
     def _get_base_attributes(self) -> dict[str, Any]:
         """Return sampling-relevant attributes available at span creation time."""

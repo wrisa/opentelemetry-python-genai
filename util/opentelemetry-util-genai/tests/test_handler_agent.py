@@ -544,6 +544,82 @@ class TestRemoteAgentInvocation(unittest.TestCase):
         assert captured_attributes[server_attributes.SERVER_PORT] == 8080
 
 
+class TestAgentConversationRoot(unittest.TestCase):
+    def setUp(self):
+        self.span_exporter = InMemorySpanExporter()
+        tracer_provider = TracerProvider()
+        tracer_provider.add_span_processor(
+            SimpleSpanProcessor(self.span_exporter)
+        )
+        self.handler = TelemetryHandler(tracer_provider=tracer_provider)
+
+    def test_root_agent_gets_conversation_root_true(self):
+        """Agent with no enclosing GenAI context is auto-marked as root."""
+        invocation = self.handler.invoke_local_agent("openai", agent_name="Root Agent")
+        assert invocation.conversation_root is True
+        invocation.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        assert spans[0].attributes.get("gen_ai.conversation_root") is True
+
+    def test_child_agent_does_not_get_conversation_root(self):
+        """Agent nested inside a parent GenAI span is NOT marked as root."""
+        with self.handler.invoke_local_agent("openai", agent_name="Parent Agent"):
+            child = self.handler.invoke_local_agent("openai", agent_name="Child Agent")
+            assert child.conversation_root is None
+            child.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        child_span = next(s for s in spans if s.name == "invoke_agent Child Agent")
+        assert "gen_ai.conversation_root" not in child_span.attributes
+
+    def test_root_agent_under_non_genai_span_gets_conversation_root(self):
+        """Agent under a non-GenAI OTel span (e.g. HTTP) is still marked as root.
+
+        The context-scoped attribute key is only set by GenAI invocations,
+        so a plain OTel parent span does not suppress conversation_root.
+        """
+        from opentelemetry.sdk.trace import TracerProvider as _TP
+        tracer = _TP().get_tracer("test")
+        with tracer.start_as_current_span("HTTP POST /invoke"):
+            invocation = self.handler.invoke_local_agent("openai", agent_name="Agent")
+            assert invocation.conversation_root is True
+            invocation.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        genai_span = next(s for s in spans if "invoke_agent" in s.name)
+        assert genai_span.attributes.get("gen_ai.conversation_root") is True
+
+    def test_agent_nested_under_workflow_is_not_root(self):
+        """Agent created inside a workflow does not get conversation_root."""
+        with self.handler.workflow(name="my_workflow"):
+            agent = self.handler.invoke_local_agent("openai", agent_name="Sub Agent")
+            assert agent.conversation_root is None
+            agent.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        agent_span = next(s for s in spans if "invoke_agent" in s.name)
+        assert "gen_ai.conversation_root" not in agent_span.attributes
+
+    def test_explicit_conversation_root_false_is_respected(self):
+        """Explicitly setting conversation_root=False is not overridden."""
+        invocation = self.handler.invoke_local_agent("openai")
+        invocation.conversation_root = False
+        invocation.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        assert spans[0].attributes.get("gen_ai.conversation_root") is False
+
+    def test_remote_root_agent_gets_conversation_root_true(self):
+        """Remote agent with no enclosing GenAI context is auto-marked as root."""
+        invocation = self.handler.invoke_remote_agent("openai", agent_name="Remote Root")
+        assert invocation.conversation_root is True
+        invocation.stop()
+
+        spans = self.span_exporter.get_finished_spans()
+        assert spans[0].attributes.get("gen_ai.conversation_root") is True
+
+
 class TestAgentInvocationMetrics(TestBase):
     def test_local_agent_records_duration_and_tokens(self) -> None:
         handler = TelemetryHandler(

@@ -13,6 +13,10 @@ from typing import TYPE_CHECKING, Any, Sequence, TypeAlias
 
 from opentelemetry._logs import Logger, LogRecord
 from opentelemetry.context import Context, attach, detach
+from opentelemetry.util.genai.context_attributes import (
+    get_context_scoped_attributes,
+    set_context_scoped_attributes,
+)
 from opentelemetry.semconv._incubating.attributes import (
     gen_ai_attributes as GenAI,
 )
@@ -83,19 +87,39 @@ class GenAIInvocation(AbstractContextManager["GenAIInvocation"]):
         self._span_kind: SpanKind = span_kind
         self._context_token: ContextToken | None = None
         self._monotonic_start_s: float | None = None
+        self.conversation_root: bool | None = None
+        """When True, marks this span as the root GenAI span of a conversation.
 
-    def _start(self, attributes: dict[str, Any] | None = None) -> None:
+        Auto-set by WorkflowInvocation and AgentInvocation when no
+        ``gen_ai.conversation_root`` key is found in the current OTel context
+        (i.e. no enclosing GenAI root span exists). Uses a context-scoped
+        attribute key rather than raw OTel span parentage so that non-GenAI
+        parents (HTTP, gRPC, etc.) are correctly ignored.
+
+        Can be explicitly set to override auto-detection.
+        """
+
+    def _start(
+        self,
+        attributes: dict[str, Any] | None = None,
+        extra_context: Context | None = None,
+    ) -> None:
         """Start the invocation span and attach it to the current context.
 
         Args:
             attributes: Initial span attributes available for sampling decisions.
+            extra_context: Optional context that already contains additional
+                values (e.g. context-scoped attributes set by a subclass before
+                calling _start). When provided, the span is set into this context
+                rather than the bare current context, so both the span and any
+                extra values are attached together.
         """
         self.span = self._tracer.start_span(
             name=self._span_name,
             kind=self._span_kind,
             attributes=attributes,
         )
-        self._span_context = set_span_in_context(self.span)
+        self._span_context = set_span_in_context(self.span, extra_context)
         self._monotonic_start_s = timeit.default_timer()
         self._context_token = attach(self._span_context)
 
@@ -147,6 +171,10 @@ class GenAIInvocation(AbstractContextManager["GenAIInvocation"]):
             return
         try:
             self._apply_finish(error)
+            if self.conversation_root is not None:
+                self.span.set_attribute(
+                    "gen_ai.conversation_root", self.conversation_root
+                )
         finally:
             try:
                 detach(self._context_token)

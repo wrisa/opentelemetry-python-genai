@@ -266,3 +266,111 @@ class TelemetryHandlerWorkflowSamplingTest(_WorkflowTestBase):
             spans[0].attributes[GenAI.GEN_AI_OPERATION_NAME],
             "invoke_workflow",
         )
+
+
+class TelemetryHandlerWorkflowConversationRootTest(_WorkflowTestBase):
+    # ------------------------------------------------------------------
+    # conversation_root via context-scoped attributes
+    # ------------------------------------------------------------------
+
+    def test_root_workflow_gets_conversation_root_true(self) -> None:
+        """Workflow with no enclosing GenAI context is auto-marked as root."""
+        invocation = self.handler.workflow(name="root_wf")
+        self.assertTrue(invocation.conversation_root)
+        invocation.stop()
+
+        spans = self._get_finished_spans()
+        self.assertEqual(spans[0].attributes.get("gen_ai.conversation_root"), True)
+
+    def test_child_workflow_does_not_get_conversation_root(self) -> None:
+        """Workflow nested inside another workflow is NOT marked as root."""
+        with self.handler.workflow(name="parent_wf"):
+            child = self.handler.workflow(name="child_wf")
+            self.assertIsNone(child.conversation_root)
+            child.stop()
+
+        spans = self._get_finished_spans()
+        child_span = next(s for s in spans if s.name == "invoke_workflow child_wf")
+        self.assertNotIn("gen_ai.conversation_root", child_span.attributes)
+
+    def test_root_workflow_under_non_genai_span_gets_conversation_root(self) -> None:
+        """Workflow under a non-GenAI OTel span (e.g. HTTP) is still marked as root.
+
+        The context-scoped attribute key is only written by GenAI invocations,
+        so a plain OTel parent span does not suppress conversation_root.
+        """
+        from opentelemetry.sdk.trace import TracerProvider
+        tracer = TracerProvider().get_tracer("test")
+        with tracer.start_as_current_span("HTTP GET /plan"):
+            invocation = self.handler.workflow(name="wf_under_http")
+            self.assertTrue(invocation.conversation_root)
+            invocation.stop()
+
+        spans = self._get_finished_spans()
+        genai_span = next(s for s in spans if "invoke_workflow" in s.name)
+        self.assertEqual(genai_span.attributes.get("gen_ai.conversation_root"), True)
+
+    def test_explicit_conversation_root_false_is_respected(self) -> None:
+        """Explicitly setting conversation_root=False is not overridden."""
+        invocation = self.handler.workflow(name="wf")
+        invocation.conversation_root = False
+        invocation.stop()
+
+        spans = self._get_finished_spans()
+        self.assertEqual(spans[0].attributes.get("gen_ai.conversation_root"), False)
+
+    def test_conversation_root_not_emitted_when_none(self) -> None:
+        """When conversation_root is None (child), attribute is not emitted."""
+        with self.handler.workflow(name="parent"):
+            child = self.handler.workflow(name="child")
+            self.assertIsNone(child.conversation_root)
+            child.stop()
+
+        spans = self._get_finished_spans()
+        child_span = next(s for s in spans if s.name == "invoke_workflow child")
+        self.assertNotIn("gen_ai.conversation_root", child_span.attributes)
+
+    def test_context_key_cleared_after_workflow_ends(self) -> None:
+        """After the root workflow ends, the context key is detached."""
+        from opentelemetry.util.genai.context_attributes import (
+            get_context_scoped_attributes,
+        )
+        invocation = self.handler.workflow(name="wf")
+        invocation.stop()
+
+        # After stop, context_token is detached — key is gone from current context
+        attrs = get_context_scoped_attributes()
+        self.assertNotIn("gen_ai.conversation_root", attrs)
+
+    def test_non_root_span_types_never_get_conversation_root(self) -> None:
+        """chat, execute_tool, retrieval, embedding spans are never marked as root.
+
+        Only WorkflowInvocation and AgentInvocation participate in root
+        detection. All other invocation types must never emit conversation_root.
+        """
+        from unittest.mock import patch
+        from opentelemetry.util.genai.types import ContentCapturingMode
+
+        # chat (InferenceInvocation) — even when called at the top level
+        llm = self.handler.inference("openai", request_model="gpt-4")
+        llm.stop()
+
+        # execute_tool (ToolInvocation)
+        tool = self.handler.tool("search_flights")
+        tool.stop()
+
+        # embeddings (EmbeddingInvocation)
+        emb = self.handler.embedding("openai", request_model="text-embedding-3")
+        emb.stop()
+
+        # retrieval (RetrievalInvocation)
+        ret = self.handler.retrieval(data_source_id="kb-prod")
+        ret.stop()
+
+        spans = self._get_finished_spans()
+        for span in spans:
+            self.assertNotIn(
+                "gen_ai.conversation_root",
+                span.attributes,
+                msg=f"Span '{span.name}' should not have gen_ai.conversation_root",
+            )
